@@ -1,14 +1,19 @@
 // With regards to ELv2 licensing, this entire file is license key functionality
 
+use axum::BoxError;
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::time::Duration;
 use std::time::Instant;
 
-use futures::Stream;
+use futures::FutureExt;
+use futures::{Stream, TryStreamExt};
 use graphql_client::QueryBody;
+use http_body::Body;
 use thiserror::Error;
 use tokio::sync::mpsc::channel;
 use tokio_stream::wrappers::ReceiverStream;
+use tower::ServiceExt;
 use tracing::instrument::WithSubscriber;
 use url::Url;
 
@@ -212,9 +217,10 @@ where
     <Query as graphql_client::GraphQLQuery>::Variables: From<UplinkRequest> + Send + Sync,
     Response: Send + Debug + 'static,
 {
-    for url in urls {
-        let now = Instant::now();
-        match http_request::<Query>(url.as_str(), request_body, timeout).await {
+    let now = Instant::now();
+    let responses = http_requests::<Query>(urls, request_body, timeout).await?;
+    let most_recent = responses.iter().fold(None, |acc, (url, result)| {
+        let result = match result {
             Ok(response) => {
                 let response = response.data.map(Into::into);
                 let mut query = std::any::type_name::<Query>();
@@ -240,37 +246,67 @@ where
 
                 match response {
                     None => {
-                        tracing::debug!("empty or malformed response from Uplink endpoint {}. Other endpoints will be tried", url)
+                        tracing::debug!("empty or malformed response from Uplink endpoint {}. Other endpoints will be tried", url);
+                        None
                     }
-                    Some(response_data) => return Ok(response_data),
-                };
+                    Some(response_data) => Some(response_data),
+                }
             }
             Err(e) => {
                 tracing::info!(histogram.uplink = now.elapsed().as_secs_f64(), query=std::any::type_name::<Query>(), kind = %"duration", url = url.to_string(), "type"="http_error", error=e.to_string(), code=e.status().unwrap_or_default().as_str());
                 tracing::debug!(
-                    "failed to fetch from Uplink endpoint {}: {}. Other endpoints will be tried",
-                    url,
-                    e
-                );
+                "failed to fetch from Uplink endpoint {}: {}. Other endpoints will be tried",
+                url,
+                e
+            );
+                None
             }
         };
-    }
+
+        match (acc, result) {
+            (None, result)=>result,
+            (acc, None)=>acc,
+            (Some(acc), Some(result))=>{
+                if result > acc {
+                    Some(result)
+                } else {
+                    Some(acc)
+                }
+            },
+        }
+
+    });
+
+    //TODO compare against latest known
     Err(Error::FetchFailed)
 }
 
-async fn http_request<Query>(
-    url: &str,
+async fn http_requests<Query>(
+    urls: &mut impl Iterator<Item = &Url>,
     request_body: &QueryBody<Query::Variables>,
     timeout: Duration,
-) -> Result<graphql_client::Response<Query::ResponseData>, reqwest::Error>
+) -> Result<
+    Vec<(
+        Url,
+        Result<graphql_client::Response<Query::ResponseData>, reqwest::Error>,
+    )>,
+    reqwest::Error,
+>
 where
     Query: graphql_client::GraphQLQuery,
 {
     let client = reqwest::Client::builder().timeout(timeout).build()?;
-    let res = client.post(url).json(request_body).send().await?;
-    tracing::debug!("uplink response {:?}", res);
-    let response_body: graphql_client::Response<Query::ResponseData> = res.json().await?;
-    Ok(response_body)
+    let futures = urls.map(|url| {
+        async {
+            let res = client.post(url.clone()).json(request_body).send().await?;
+            tracing::debug!("uplink response {:?}", res);
+            let response_body: graphql_client::Response<Query::ResponseData> = res.json().await?;
+            Ok(response_body)
+        }
+        .map(|r| (url.clone(), r))
+    });
+
+    Ok(futures::future::join_all(futures).await)
 }
 
 #[cfg(test)]
