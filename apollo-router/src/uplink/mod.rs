@@ -1,19 +1,16 @@
 // With regards to ELv2 licensing, this entire file is license key functionality
 
-use axum::BoxError;
 use std::cmp::Ordering;
 use std::fmt::Debug;
-use std::time::Duration;
 use std::time::Instant;
+use std::time::{Duration, SystemTime};
 
 use futures::FutureExt;
-use futures::{Stream, TryStreamExt};
+use futures::Stream;
 use graphql_client::QueryBody;
-use http_body::Body;
 use thiserror::Error;
 use tokio::sync::mpsc::channel;
 use tokio_stream::wrappers::ReceiverStream;
-use tower::ServiceExt;
 use tracing::instrument::WithSubscriber;
 use url::Url;
 
@@ -45,15 +42,16 @@ pub(crate) struct UplinkRequest {
     id: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum UplinkResponse<Response>
 where
-    Response: Send + Debug + 'static,
+    Response: Send + Debug + PartialEq + 'static,
 {
     New {
         response: Response,
         id: String,
         delay: u64,
+        ordering_id: SystemTime,
     },
     Unchanged {
         id: Option<String>,
@@ -64,6 +62,28 @@ where
         code: String,
         message: String,
     },
+}
+
+// Uplink responses are always ordered by ordering_id, or return None if either parameters don't have an ordering id
+impl<Response> PartialOrd for UplinkResponse<Response>
+where
+    Response: Send + Debug + PartialEq + 'static,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (
+                UplinkResponse::New {
+                    ordering_id: left_ordering_id,
+                    ..
+                },
+                UplinkResponse::New {
+                    ordering_id: right_ordering_id,
+                    ..
+                },
+            ) => left_ordering_id.partial_cmp(right_ordering_id),
+            (_, _) => None,
+        }
+    }
 }
 
 pub(crate) enum Endpoints {
@@ -131,11 +151,12 @@ where
     Query: graphql_client::GraphQLQuery,
     <Query as graphql_client::GraphQLQuery>::ResponseData: Into<UplinkResponse<Response>> + Send,
     <Query as graphql_client::GraphQLQuery>::Variables: From<UplinkRequest> + Send + Sync,
-    Response: Send + 'static + Debug,
+    Response: Send + PartialEq + Debug + 'static,
 {
     let (sender, receiver) = channel(2);
     let task = async move {
         let mut last_id = None;
+        let mut last_ordering_id = SystemTime::UNIX_EPOCH;
         let mut endpoints = endpoints.unwrap_or_default();
         loop {
             let query_body = Query::build_query(
@@ -154,10 +175,18 @@ where
                             id,
                             response,
                             delay,
+                            ordering_id,
                         } => {
                             last_id = Some(id);
-                            if sender.send(Ok(response)).await.is_err() {
-                                break;
+                            if ordering_id > last_ordering_id {
+                                last_ordering_id = ordering_id;
+                                if sender.send(Ok(response)).await.is_err() {
+                                    break;
+                                }
+                            } else {
+                                tracing::debug!(
+                                    "uplink response was older than the last received, ignoring"
+                                )
                             }
 
                             interval = Duration::from_secs(delay);
@@ -215,11 +244,11 @@ where
     Query: graphql_client::GraphQLQuery,
     <Query as graphql_client::GraphQLQuery>::ResponseData: Into<UplinkResponse<Response>> + Send,
     <Query as graphql_client::GraphQLQuery>::Variables: From<UplinkRequest> + Send + Sync,
-    Response: Send + Debug + 'static,
+    Response: Send + PartialEq + Debug + 'static,
 {
     let now = Instant::now();
     let responses = http_requests::<Query>(urls, request_body, timeout).await?;
-    let most_recent = responses.iter().fold(None, |acc, (url, result)| {
+    let most_recent = responses.into_iter().fold(None, |acc, (url, result)| {
         let result = match result {
             Ok(response) => {
                 let response = response.data.map(Into::into);
@@ -277,8 +306,7 @@ where
 
     });
 
-    //TODO compare against latest known
-    Err(Error::FetchFailed)
+    most_recent.ok_or(Error::FetchFailed)
 }
 
 async fn http_requests<Query>(
@@ -677,6 +705,34 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn stream_from_uplink_failed_from_all() {
+        let (mock_server, url1, url2, _url3) = init_mock_server().await;
+        MockResponses::builder()
+            .mock_server(&mock_server)
+            .endpoint(&url1)
+            .response(response_fetch_error_http())
+            .build()
+            .await;
+        MockResponses::builder()
+            .mock_server(&mock_server)
+            .endpoint(&url2)
+            .response(response_fetch_error_http())
+            .build()
+            .await;
+        let results = stream_from_uplink::<EntitlementQuery, Entitlement>(
+            "dummy_key".to_string(),
+            "dummy_graph_ref".to_string(),
+            Some(Endpoints::round_robin(vec![url1, url2])),
+            Duration::from_secs(0),
+            Duration::from_secs(1),
+        )
+        .take(1)
+        .collect::<Vec<_>>()
+        .await;
+        assert_yaml_snapshot!(results.into_iter().map(to_friendly).collect::<Vec<_>>());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn use_latest() {
         let (mock_server, url1, url2, _url3) = init_mock_server().await;
         MockResponses::builder()
             .mock_server(&mock_server)

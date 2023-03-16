@@ -6,6 +6,8 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 
 use graphql_client::GraphQLQuery;
+use humantime::Timestamp;
+use std::str::FromStr;
 
 use crate::uplink::schema_stream::supergraph_sdl_query::FetchErrorCode;
 use crate::uplink::schema_stream::supergraph_sdl_query::SupergraphSdlQueryRouterConfig;
@@ -36,13 +38,27 @@ impl From<UplinkRequest> for supergraph_sdl_query::Variables {
 impl From<supergraph_sdl_query::ResponseData> for UplinkResponse<String> {
     fn from(response: supergraph_sdl_query::ResponseData) -> Self {
         match response.router_config {
-            SupergraphSdlQueryRouterConfig::RouterConfigResult(result) => UplinkResponse::New {
-                response: result.supergraph_sdl,
-                id: result.id,
-                // this will truncate the number of seconds to under u64::MAX, which should be
-                // a large enough delay anyway
-                delay: result.min_delay_seconds as u64,
-            },
+            SupergraphSdlQueryRouterConfig::RouterConfigResult(result) => {
+                if let Ok(ordering_id) = Timestamp::from_str(&result.id.to_string()) {
+                    UplinkResponse::New {
+                        response: result.supergraph_sdl,
+                        ordering_id: ordering_id.into(),
+                        id: result.id,
+                        // this will truncate the number of seconds to under u64::MAX, which should be
+                        // a large enough delay anyway
+                        delay: result.min_delay_seconds as u64,
+                    }
+                } else {
+                    tracing::error!(
+                        "invalid id from uplink response {}, ignoring schema update",
+                        result.id
+                    );
+                    UplinkResponse::Unchanged {
+                        id: None,
+                        delay: None,
+                    }
+                }
+            }
             SupergraphSdlQueryRouterConfig::Unchanged => UplinkResponse::Unchanged {
                 id: None,
                 delay: None,

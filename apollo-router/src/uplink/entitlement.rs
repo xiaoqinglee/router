@@ -171,7 +171,7 @@ impl Display for EntitlementReport {
 
 /// Entitlement controls availability of certain features of the Router. It must be constructed from a base64 encoded JWT
 /// This API experimental and is subject to change outside of semver.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Entitlement {
     pub(crate) claims: Option<Claims>,
 }

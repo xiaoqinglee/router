@@ -54,6 +54,12 @@ impl From<entitlement_query::ResponseData> for UplinkResponse<Entitlement> {
                 if let Some(entitlement) = result.entitlement {
                     match Entitlement::from_str(&entitlement.jwt) {
                         Ok(entitlement) => UplinkResponse::New {
+                            // We use the halt_at time to determine if this entitlement is 'later'
+                            ordering_id: entitlement
+                                .claims
+                                .as_ref()
+                                .map(|claims| claims.halt_at)
+                                .unwrap_or(SystemTime::UNIX_EPOCH),
                             response: entitlement,
                             id: result.id,
                             // this will truncate the number of seconds to under u64::MAX, which should be
@@ -73,6 +79,9 @@ impl From<entitlement_query::ResponseData> for UplinkResponse<Entitlement> {
                         // this will truncate the number of seconds to under u64::MAX, which should be
                         // a large enough delay anyway
                         delay: result.min_delay_seconds as u64,
+                        // We don't have an ordering because there was no entitlement.
+                        // We can rely on the state machine to deal with this later
+                        ordering_id: SystemTime::UNIX_EPOCH,
                     }
                 }
             }
