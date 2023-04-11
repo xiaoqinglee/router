@@ -62,7 +62,7 @@ use self::metrics::AttributesForwardConf;
 use self::metrics::MetricsAttributesConf;
 use self::reload::reload_fmt;
 use self::reload::reload_metrics;
-use self::reload::LayeredTracer;
+use self::reload::LayeredApollo;
 use self::reload::OPENTELEMETRY_TRACER_HANDLE;
 use self::reload::SPAN_SAMPLING_RATE;
 use crate::layers::ServiceBuilderExt;
@@ -609,7 +609,7 @@ impl Telemetry {
         Ok(builder)
     }
 
-    fn create_fmt_layer(config: &config::Conf) -> Box<dyn Layer<LayeredTracer> + Send + Sync> {
+    fn create_fmt_layer(config: &config::Conf) -> Box<dyn Layer<LayeredApollo> + Send + Sync> {
         let logging = &config.logging;
         let fmt = match logging.format {
             config::LoggingFormat::Pretty => tracing_subscriber::fmt::layer()

@@ -37,36 +37,43 @@ pub(super) type LayeredTracer = Layered<
     Registry,
 >;
 
-// These handles allow hot tracing of layers. They have complex type definitions because tracing has
-// generic types in the layer definition.
-pub(super) static OPENTELEMETRY_TRACER_HANDLE: OnceCell<
-    ReloadTracer<opentelemetry::sdk::trace::Tracer>,
+#[allow(clippy::type_complexity)]
+static APOLLO_LAYER_HANDLE: OnceCell<
+    Handle<
+        Option<ApolloLayer>,
+        Registry, //Layered<MetricsReloadLayer, Layered<FmtReloadLayer, LayeredTracer>>,
+    >,
 > = OnceCell::new();
 
+type ApolloReloadLayer = tracing_subscriber::reload::Layer<Option<ApolloLayer>, Registry>;
+pub(super) type LayeredApollo = Layered<
+    tracing_subscriber::reload::Layer<std::option::Option<ApolloLayer>, Registry>,
+    Registry,
+>;
+
 static FMT_LAYER_HANDLE: OnceCell<
-    Handle<Box<dyn Layer<LayeredTracer> + Send + Sync>, LayeredTracer>,
+    Handle<Box<dyn Layer<LayeredApollo> + Send + Sync>, LayeredApollo>,
 > = OnceCell::new();
 
 pub(super) static SPAN_SAMPLING_RATE: AtomicU64 =
     AtomicU64::new(unsafe { mem::transmute::<f64, u64>(0.0) });
 
 type FmtReloadLayer =
-    tracing_subscriber::reload::Layer<Box<dyn Layer<LayeredTracer> + Send + Sync>, LayeredTracer>;
+    tracing_subscriber::reload::Layer<Box<dyn Layer<LayeredApollo> + Send + Sync>, LayeredApollo>;
 
 #[allow(clippy::type_complexity)]
 static METRICS_LAYER_HANDLE: OnceCell<
-    Handle<MetricsLayer, Layered<FmtReloadLayer, LayeredTracer>>,
+    Handle<MetricsLayer, Layered<FmtReloadLayer, LayeredApollo>>,
+    //Handle<MetricsLayer, Layered<
 > = OnceCell::new();
 
 type MetricsReloadLayer =
     tracing_subscriber::reload::Layer<MetricsLayer, Layered<FmtReloadLayer, LayeredTracer>>;
 
-#[allow(clippy::type_complexity)]
-static APOLLO_LAYER_HANDLE: OnceCell<
-    Handle<
-        Option<ApolloLayer>,
-        Layered<MetricsReloadLayer, Layered<FmtReloadLayer, LayeredTracer>>,
-    >,
+// These handles allow hot tracing of layers. They have complex type definitions because tracing has
+// generic types in the layer definition.
+pub(super) static OPENTELEMETRY_TRACER_HANDLE: OnceCell<
+    ReloadTracer<opentelemetry::sdk::trace::Tracer>,
 > = OnceCell::new();
 
 pub(crate) fn init_telemetry(log_level: &str) -> Result<()> {
@@ -119,10 +126,10 @@ pub(crate) fn init_telemetry(log_level: &str) -> Result<()> {
             // Env filter is separate because of https://github.com/tokio-rs/tracing/issues/1629
             // the tracing registry is only created once
             tracing_subscriber::registry()
-                .with(opentelemetry_layer)
+                .with(apollo_layer)
                 .with(fmt_layer)
                 .with(metrics_layer)
-                .with(apollo_layer)
+                .with(opentelemetry_layer)
                 .with(EnvFilter::try_new(log_level)?)
                 .try_init()?;
 
@@ -153,7 +160,7 @@ pub(super) fn reload_metrics(layer: MetricsLayer) {
     }
 }
 
-pub(super) fn reload_fmt(layer: Box<dyn Layer<LayeredTracer> + Send + Sync>) {
+pub(super) fn reload_fmt(layer: Box<dyn Layer<LayeredApollo> + Send + Sync>) {
     if let Some(handle) = FMT_LAYER_HANDLE.get() {
         handle.reload(layer).expect("fmt layer reload must succeed");
     }
