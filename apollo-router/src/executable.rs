@@ -559,6 +559,17 @@ impl Executable {
             }
         });
 
+        // Let's set up some memory monitoring/management if we are a linux executable
+        #[cfg(target_os = "linux")]
+        tokio::spawn(async {
+            // XXX: Could be configurable
+            let mut memory_interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                memory_interval.tick().await;
+                manage_memory();
+            }
+        });
+
         let router = RouterHttpServer::builder()
             .configuration(configuration)
             .schema(schema)
@@ -616,4 +627,11 @@ fn copy_args_to_env() {
             }
         }
     });
+}
+#[cfg(target_os = "linux")]
+fn manage_memory() {
+    let info = unsafe { libc::mallinfo() };
+    tracing::info!(%info.ordblks, %info.smblks, %info.hblks, %info.hblkhd, %info.usmblks, %info.fsmblks,  %info.uordblks, %info.fordblks, %info.keepcost, "memory details before trimming");
+    tracing::info!("trimmed?: {}", unsafe { libc::malloc_trim(10) });
+    tracing::info!(%info.ordblks, %info.smblks, %info.hblks, %info.hblkhd, %info.usmblks, %info.fsmblks,  %info.uordblks, %info.fordblks, %info.keepcost, "memory details after trimming");
 }
