@@ -631,7 +631,7 @@ fn copy_args_to_env() {
 #[cfg(target_os = "linux")]
 fn manage_memory() {
     let info = unsafe { libc::mallinfo() };
-    tracing::info!(%info.ordblks, %info.smblks, %info.hblks, %info.hblkhd, %info.usmblks, %info.fsmblks,  %info.uordblks, %info.fordblks, %info.keepcost, "memory details before trimming");
+    tracing::info!(%info.arena, %info.ordblks, %info.smblks, %info.hblks, %info.hblkhd, %info.usmblks, %info.fsmblks,  %info.uordblks, %info.fordblks, %info.keepcost, "memory details before trimming");
     tracing::info!("trimmed?: {}", unsafe { libc::malloc_trim(10) });
-    tracing::info!(%info.ordblks, %info.smblks, %info.hblks, %info.hblkhd, %info.usmblks, %info.fsmblks,  %info.uordblks, %info.fordblks, %info.keepcost, "memory details after trimming");
+    tracing::info!(%info.arena, %info.ordblks, %info.smblks, %info.hblks, %info.hblkhd, %info.usmblks, %info.fsmblks,  %info.uordblks, %info.fordblks, %info.keepcost, "memory details after trimming");
 }
