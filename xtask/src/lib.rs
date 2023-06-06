@@ -79,6 +79,8 @@ macro_rules! cargo {
 
         let status = command
             .current_dir(&*PKG_PROJECT_ROOT)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
             .status()?;
 
         $crate::anyhow::ensure!(status.success(), "cargo command failed");
@@ -96,6 +98,8 @@ macro_rules! npm {
 
         let status = command
             .current_dir($current_dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
             .status()?;
 
         $crate::anyhow::ensure!(status.success(), "npm command failed");
