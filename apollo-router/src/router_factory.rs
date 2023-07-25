@@ -21,6 +21,8 @@ use crate::configuration::APOLLO_PLUGIN_PREFIX;
 use crate::plugin::DynPlugin;
 use crate::plugin::Handler;
 use crate::plugin::PluginFactory;
+use crate::plugins::authentication::subgraph_auth::Config as SubgraphAuthConfig;
+use crate::plugins::authentication::subgraph_auth::SubgraphAuthLayer;
 use crate::plugins::subscription::Subscription;
 use crate::plugins::subscription::APOLLO_SUBSCRIPTION_PLUGIN;
 use crate::plugins::traffic_shaping::TrafficShaping;
@@ -190,6 +192,25 @@ impl RouterSuperServiceFactory for YamlRouterFactory {
                 .and_then(|plugin| (*plugin.1).as_any().downcast_ref::<TrafficShaping>())
                 .expect("traffic shaping should always be part of the plugin list");
 
+            let auth_layer_configuration = configuration
+                .apollo_plugins
+                .plugins
+                .get("authentication")
+                .and_then(|auth| {
+                    let config: Option<SubgraphAuthConfig> = auth
+                        .get("subgraph")
+                        // TODO: remove unwraps
+                        .map(|subgraph_auth| {
+                            serde_json::from_value(subgraph_auth.clone()).unwrap()
+                        });
+                    config.and_then(|c| c.for_subgraph(name))
+                });
+            let auth = if let Some(configuration) = auth_layer_configuration {
+                Some(SubgraphAuthLayer::new(name, configuration).await?)
+            } else {
+                None
+            };
+
             let subgraph_service = shaping.subgraph_service_internal(
                 name,
                 SubgraphService::new(
@@ -205,6 +226,7 @@ impl RouterSuperServiceFactory for YamlRouterFactory {
                     shaping.enable_subgraph_http2(name),
                     subscription_plugin_conf.clone(),
                     configuration.notify.clone(),
+                    auth,
                 ),
             );
             builder = builder.with_subgraph_service(name, subgraph_service);
@@ -313,6 +335,25 @@ impl YamlRouterFactory {
                 .and_then(|plugin| (*plugin.1).as_any().downcast_ref::<TrafficShaping>())
                 .expect("traffic shaping should always be part of the plugin list");
 
+            let auth_layer_configuration = configuration
+                .apollo_plugins
+                .plugins
+                .get("authentication")
+                .and_then(|auth| {
+                    let config: Option<SubgraphAuthConfig> = auth
+                        .get("subgraph")
+                        // TODO: remove unwraps
+                        .map(|subgraph_auth| {
+                            serde_json::from_value(subgraph_auth.clone()).unwrap()
+                        });
+                    config.and_then(|c| c.for_subgraph(name))
+                });
+            let auth = if let Some(configuration) = auth_layer_configuration {
+                Some(SubgraphAuthLayer::new(name, configuration).await?)
+            } else {
+                None
+            };
+
             let subgraph_service = shaping.subgraph_service_internal(
                 name,
                 SubgraphService::new(
@@ -328,6 +369,7 @@ impl YamlRouterFactory {
                     shaping.enable_subgraph_http2(name),
                     subscription_plugin_conf.clone(),
                     configuration.notify.clone(),
+                    auth,
                 ),
             );
             builder = builder.with_subgraph_service(name, subgraph_service);
@@ -510,7 +552,6 @@ pub(crate) async fn create_plugins(
     // This relative ordering is documented in `docs/source/customizations/native.mdx`:
     add_optional_apollo_plugin!("rhai");
     add_optional_apollo_plugin!("coprocessor");
-    add_optional_apollo_plugin!("subgraph_authentication");
     add_user_plugins!();
 
     // Macros above remove from `apollo_plugin_factories`, so anything left at the end

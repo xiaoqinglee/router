@@ -40,7 +40,7 @@ use crate::services::router;
 use crate::Context;
 
 mod jwks;
-mod subgraph_auth;
+pub(crate) mod subgraph_auth;
 
 #[cfg(test)]
 mod tests;
@@ -97,7 +97,7 @@ pub(crate) enum Error {
 }
 
 struct AuthenticationPlugin {
-    configuration: JWTConf,
+    configuration: Option<JWTConf>,
     jwks_manager: JwksManager,
 }
 
@@ -135,12 +135,21 @@ impl Default for JWTConf {
     }
 }
 
+/// Authentication
+#[allow(dead_code)]
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+struct Conf {
+    /// Router configuration
+    router: Option<RouterConf>,
+    /// Subgraph configuration
+    subgraph: Option<super::authentication::subgraph_auth::Config>,
+}
+
 // We may support additional authentication mechanisms in future, so all
 // configuration (which is currently JWT specific) is isolated to the
 // JWTConf structure.
-/// Authentication
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
-struct Conf {
+struct RouterConf {
     /// The JWT configuration
     jwt: JWTConf,
 }
@@ -329,60 +338,69 @@ impl Plugin for AuthenticationPlugin {
     type Config = Conf;
 
     async fn new(init: PluginInit<Self::Config>) -> Result<Self, BoxError> {
-        if init
-            .config
-            .jwt
-            .header_value_prefix
-            .as_bytes()
-            .iter()
-            .any(u8::is_ascii_whitespace)
-        {
-            return Err(Error::BadHeaderValuePrefix.into());
+        if let Some(router_conf) = init.config.router {
+            if router_conf
+                .jwt
+                .header_value_prefix
+                .as_bytes()
+                .iter()
+                .any(u8::is_ascii_whitespace)
+            {
+                return Err(Error::BadHeaderValuePrefix.into());
+            }
+            let mut list = vec![];
+            for jwks_conf in &router_conf.jwt.jwks {
+                let url: Url = Url::from_str(jwks_conf.url.as_str())?;
+                list.push(JwksConfig {
+                    url,
+                    issuer: jwks_conf.issuer.clone(),
+                    algorithms: jwks_conf
+                        .algorithms
+                        .as_ref()
+                        .map(|algs| algs.iter().cloned().collect()),
+                });
+            }
+
+            tracing::info!(jwks=?router_conf.jwt.jwks, "JWT authentication using JWKSets from");
+
+            let jwks_manager = JwksManager::new(list).await?;
+
+            Ok(AuthenticationPlugin {
+                configuration: Some(router_conf.jwt),
+                jwks_manager,
+            })
+        } else {
+            Ok(AuthenticationPlugin {
+                configuration: None,
+                jwks_manager: JwksManager::new(Default::default()).await?,
+            })
         }
-        let mut list = vec![];
-        for jwks_conf in &init.config.jwt.jwks {
-            let url: Url = Url::from_str(jwks_conf.url.as_str())?;
-            list.push(JwksConfig {
-                url,
-                issuer: jwks_conf.issuer.clone(),
-                algorithms: jwks_conf
-                    .algorithms
-                    .as_ref()
-                    .map(|algs| algs.iter().cloned().collect()),
-            });
-        }
-
-        tracing::info!(jwks=?init.config.jwt.jwks, "JWT authentication using JWKSets from");
-
-        let jwks_manager = JwksManager::new(list).await?;
-
-        Ok(AuthenticationPlugin {
-            configuration: init.config.jwt,
-            jwks_manager,
-        })
     }
 
     fn router_service(&self, service: router::BoxService) -> router::BoxService {
-        let request_full_config = self.configuration.clone();
-        let jwks_manager = self.jwks_manager.clone();
+        if let Some(request_full_config) = self.configuration.clone() {
+            let jwks_manager = self.jwks_manager.clone();
 
-        fn authentication_service_span() -> impl Fn(&router::Request) -> tracing::Span + Clone {
-            move |_request: &router::Request| {
-                tracing::info_span!(
-                    AUTHENTICATION_SPAN_NAME,
-                    "authentication service" = stringify!(router::Request),
-                    "otel.kind" = "INTERNAL"
-                )
+            fn authentication_service_span() -> impl Fn(&router::Request) -> tracing::Span + Clone {
+                move |_request: &router::Request| {
+                    tracing::info_span!(
+                        AUTHENTICATION_SPAN_NAME,
+                        "authentication service" = stringify!(router::Request),
+                        "otel.kind" = "INTERNAL"
+                    )
+                }
             }
-        }
 
-        ServiceBuilder::new()
-            .instrument(authentication_service_span())
-            .checkpoint(move |request: router::Request| {
-                authenticate(&request_full_config, &jwks_manager, request)
-            })
-            .service(service)
-            .boxed()
+            ServiceBuilder::new()
+                .instrument(authentication_service_span())
+                .checkpoint(move |request: router::Request| {
+                    authenticate(&request_full_config, &jwks_manager, request)
+                })
+                .service(service)
+                .boxed()
+        } else {
+            service
+        }
     }
 }
 

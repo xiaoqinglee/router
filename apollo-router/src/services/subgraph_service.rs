@@ -60,6 +60,7 @@ use super::Plugins;
 use crate::error::FetchError;
 use crate::graphql;
 use crate::json_ext::Object;
+use crate::plugins::authentication::subgraph_auth::SubgraphAuthLayer;
 use crate::plugins::subscription::create_verifier;
 use crate::plugins::subscription::CallbackMode;
 use crate::plugins::subscription::SubscriptionConfig;
@@ -147,6 +148,7 @@ pub(crate) struct SubgraphService {
     /// Subscription config if enabled
     subscription_config: Option<SubscriptionConfig>,
     notify: Notify<String, graphql::Response>,
+    auth: Option<SubgraphAuthLayer>,
 }
 
 impl SubgraphService {
@@ -157,6 +159,7 @@ impl SubgraphService {
         enable_http2: bool,
         subscription_config: Option<SubscriptionConfig>,
         notify: Notify<String, graphql::Response>,
+        auth: Option<SubgraphAuthLayer>,
     ) -> Self {
         let mut http_connector = HttpConnector::new();
         http_connector.set_nodelay(true);
@@ -194,6 +197,7 @@ impl SubgraphService {
             apq: Arc::new(<AtomicBool>::new(enable_apq)),
             subscription_config,
             notify,
+            auth,
         }
     }
 }
@@ -251,7 +255,15 @@ impl tower::Service<SubgraphRequest> for SubgraphService {
         let arc_apq_enabled = self.apq.clone();
 
         let mut notify = self.notify.clone();
+
+        let auth = self.auth.clone();
         let make_calls = async move {
+            let request = if let Some(auth) = auth {
+                auth.subgraph_request(request).await?
+            } else {
+                request
+            };
+
             // Subscription handling
             if request.operation_kind == OperationKind::Subscription
                 && request.subscription_stream.is_some()
@@ -1709,6 +1721,7 @@ mod tests {
             false,
             subscription_config().into(),
             Notify::builder().build(),
+            None,
         );
         let (tx, _rx) = mpsc::channel(2);
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
@@ -1755,7 +1768,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_subgraph_application_graphql_response(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let response = subgraph_service
@@ -1789,7 +1802,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_subgraph_application_json_response(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let response = subgraph_service
@@ -1823,7 +1836,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_subgraph_ok_status_invalid_response(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let response = subgraph_service
@@ -1862,7 +1875,7 @@ mod tests {
             emulate_subgraph_invalid_response_invalid_status_application_json(listener),
         );
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let response = subgraph_service
@@ -1905,7 +1918,7 @@ mod tests {
             emulate_subgraph_invalid_response_invalid_status_application_graphql(listener),
         );
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let response = subgraph_service
@@ -1952,6 +1965,7 @@ mod tests {
             false,
             subscription_config().into(),
             Notify::builder().build(),
+            None,
         );
         let (tx, mut rx) = mpsc::channel(2);
 
@@ -2012,6 +2026,7 @@ mod tests {
             false,
             subscription_config().into(),
             Notify::builder().build(),
+            None,
         );
         let (tx, _rx) = mpsc::channel(2);
 
@@ -2058,7 +2073,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_subgraph_bad_request(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let response = subgraph_service
@@ -2100,7 +2115,7 @@ mod tests {
         tokio::task::spawn(emulate_subgraph_bad_response_format(listener));
 
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let response = subgraph_service
@@ -2137,7 +2152,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_subgraph_compressed_response(listener));
         let subgraph_service =
-            SubgraphService::new("test", false, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let resp = subgraph_service
@@ -2178,7 +2193,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_subgraph_unauthorized(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let response = subgraph_service
@@ -2215,7 +2230,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_persisted_query_not_supported_message(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         assert!(subgraph_service.clone().apq.as_ref().load(Relaxed));
 
@@ -2261,7 +2276,7 @@ mod tests {
             listener,
         ));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         assert!(subgraph_service.clone().apq.as_ref().load(Relaxed));
 
@@ -2305,7 +2320,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_persisted_query_not_found_message(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let resp = subgraph_service
@@ -2346,7 +2361,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_persisted_query_not_found_extension_code(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let resp = subgraph_service
@@ -2387,7 +2402,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_expected_apq_enabled_configuration(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let resp = subgraph_service
@@ -2428,7 +2443,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_expected_apq_disabled_configuration(listener));
         let subgraph_service =
-            SubgraphService::new("test", false, None, true, None, Notify::default());
+            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let resp = subgraph_service

@@ -47,6 +47,14 @@ pub(super) struct JwkSetInfo {
 impl JwksManager {
     pub(super) async fn new(list: Vec<JwksConfig>) -> Result<Self, BoxError> {
         use futures::FutureExt;
+        let (_drop_signal, drop_receiver) = oneshot::channel::<()>();
+        if list.is_empty() {
+            return Ok(JwksManager {
+                list,
+                jwks_map: Default::default(),
+                _drop_signal: Arc::new(_drop_signal),
+            });
+        }
 
         let downloads = list
             .iter()
@@ -59,7 +67,6 @@ impl JwksManager {
         let jwks_map: HashMap<_, _> = join_all(downloads).await.into_iter().flatten().collect();
 
         let jwks_map = Arc::new(RwLock::new(jwks_map));
-        let (_drop_signal, drop_receiver) = oneshot::channel::<()>();
 
         tokio::task::spawn(poll(list.clone(), jwks_map.clone(), drop_receiver));
 
