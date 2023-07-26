@@ -2152,7 +2152,7 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_subgraph_compressed_response(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
+            SubgraphService::new("test", false, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let resp = subgraph_service
