@@ -249,7 +249,7 @@ impl tower::Service<SubgraphRequest> for SubgraphService {
 
         let (_, mut body) = subgraph_request.into_parts();
 
-        let clone = self.client.clone();
+        let clone: Decompression<Client<HttpsConnector<HttpConnector>>> = self.client.clone();
         let client = std::mem::replace(&mut self.client, clone);
 
         let arc_apq_enabled = self.apq.clone();
@@ -2443,11 +2443,10 @@ mod tests {
         let socket_addr = listener.local_addr().unwrap();
         tokio::task::spawn(emulate_expected_apq_disabled_configuration(listener));
         let subgraph_service =
-            SubgraphService::new("test", true, None, true, None, Notify::default(), None);
+            SubgraphService::new("test", false, None, true, None, Notify::default(), None);
 
         let url = Uri::from_str(&format!("http://{socket_addr}")).unwrap();
         let resp = subgraph_service
-            .clone()
             .oneshot(SubgraphRequest {
                 supergraph_request: Arc::new(
                     http::Request::builder()
