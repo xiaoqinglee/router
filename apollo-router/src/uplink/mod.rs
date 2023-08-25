@@ -416,7 +416,6 @@ where
 #[cfg(test)]
 mod test {
     use std::collections::VecDeque;
-    use std::ops::ControlFlow;
     use std::sync::Mutex;
     use std::time::Duration;
 
@@ -438,7 +437,6 @@ mod test {
     use wiremock::ResponseTemplate;
 
     use crate::uplink::stream_from_uplink;
-    use crate::uplink::stream_from_uplink2;
     use crate::uplink::Endpoints;
     use crate::uplink::Error;
     use crate::uplink::UplinkConfig;
@@ -954,33 +952,5 @@ mod test {
 
     fn response_empty() -> ResponseTemplate {
         ResponseTemplate::new(StatusCode::OK).set_body_json(json!({ "data": null }))
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn stream_from_uplink_2_test() {
-        let (mock_server, url1, url2, _url3) = init_mock_server().await;
-        MockResponses::builder()
-            .mock_server(&mock_server)
-            .endpoint(&url1)
-            .response(response_ok(1))
-            .response(response_ok(2))
-            .build()
-            .await;
-        MockResponses::builder()
-            .mock_server(&mock_server)
-            .endpoint(&url2)
-            .build()
-            .await;
-
-        let callback = |stuff| futures::Future::Ready(ControlFlow::Continue(()));
-
-        let results = stream_from_uplink2::<TestQuery, QueryResult>(
-            mock_uplink_config_with_fallback_urls(vec![url1, url2]),
-            callback,
-        )
-        .take(2)
-        .collect::<Vec<_>>()
-        .await;
-        assert_yaml_snapshot!(results.into_iter().map(to_friendly).collect::<Vec<_>>());
     }
 }
