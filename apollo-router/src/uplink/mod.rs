@@ -1,8 +1,10 @@
 use std::error::Error as stdError;
 use std::fmt::Debug;
+use std::ops::ControlFlow;
 use std::time::Duration;
 use std::time::Instant;
 
+use futures::Future;
 use futures::Stream;
 use graphql_client::QueryBody;
 use thiserror::Error;
@@ -181,10 +183,15 @@ where
 
             let query_body = Query::build_query(variables.into());
 
-            match fetch::<Query, Response>(
+            match fetch::<Query, Response, Response>(
                 &query_body,
                 &mut endpoints.iter(),
                 uplink_config.timeout,
+                |uplink_response| {
+                    Box::new(Box::pin(async {
+                        ControlFlow::Continue(Ok(uplink_response))
+                    }))
+                },
             )
             .await
             {
@@ -258,23 +265,43 @@ where
     ReceiverStream::new(receiver)
 }
 
-pub(crate) async fn fetch<Query, Response>(
+pub(crate) async fn fetch<Query, Response, SomethingElse>(
     request_body: &QueryBody<Query::Variables>,
     urls: &mut impl Iterator<Item = &Url>,
     timeout: Duration,
-) -> Result<UplinkResponse<Response>, Error>
+    on_new_response: impl Fn(
+            UplinkResponse<Response>,
+        ) -> Box<
+            dyn Future<Output = ControlFlow<(), Result<UplinkResponse<SomethingElse>, Error>>>
+                + Send
+                + Unpin,
+        > + Send
+        + Sync
+        + 'static,
+) -> Result<UplinkResponse<SomethingElse>, Error>
 where
     Query: graphql_client::GraphQLQuery,
     <Query as graphql_client::GraphQLQuery>::ResponseData: Into<UplinkResponse<Response>> + Send,
     <Query as graphql_client::GraphQLQuery>::Variables: From<UplinkRequest> + Send + Sync,
     Response: Send + Debug + 'static,
+    SomethingElse: Send + Debug + 'static,
 {
     let query = query_name::<Query>();
     for url in urls {
         let now = Instant::now();
         match http_request::<Query>(url.as_str(), request_body, timeout).await {
             Ok(response) => {
-                let response = response.data.map(Into::into);
+                let data = response.data.map(Into::into);
+                let response = if let Some(response) = data {
+                    match on_new_response(response).await {
+                        ControlFlow::Continue(res) => Some(res?),
+                        ControlFlow::Break(()) => {
+                            continue;
+                        }
+                    }
+                } else {
+                    None
+                };
                 match &response {
                     None => {
                         tracing::info!(
@@ -389,6 +416,7 @@ where
 #[cfg(test)]
 mod test {
     use std::collections::VecDeque;
+    use std::ops::ControlFlow;
     use std::sync::Mutex;
     use std::time::Duration;
 
@@ -410,6 +438,7 @@ mod test {
     use wiremock::ResponseTemplate;
 
     use crate::uplink::stream_from_uplink;
+    use crate::uplink::stream_from_uplink2;
     use crate::uplink::Endpoints;
     use crate::uplink::Error;
     use crate::uplink::UplinkConfig;
@@ -925,5 +954,33 @@ mod test {
 
     fn response_empty() -> ResponseTemplate {
         ResponseTemplate::new(StatusCode::OK).set_body_json(json!({ "data": null }))
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stream_from_uplink_2_test() {
+        let (mock_server, url1, url2, _url3) = init_mock_server().await;
+        MockResponses::builder()
+            .mock_server(&mock_server)
+            .endpoint(&url1)
+            .response(response_ok(1))
+            .response(response_ok(2))
+            .build()
+            .await;
+        MockResponses::builder()
+            .mock_server(&mock_server)
+            .endpoint(&url2)
+            .build()
+            .await;
+
+        let callback = |stuff| futures::Future::Ready(ControlFlow::Continue(()));
+
+        let results = stream_from_uplink2::<TestQuery, QueryResult>(
+            mock_uplink_config_with_fallback_urls(vec![url1, url2]),
+            callback,
+        )
+        .take(2)
+        .collect::<Vec<_>>()
+        .await;
+        assert_yaml_snapshot!(results.into_iter().map(to_friendly).collect::<Vec<_>>());
     }
 }
