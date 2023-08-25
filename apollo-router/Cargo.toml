@@ -172,7 +172,9 @@ reqwest = { version = "0.11.19", default-features = false, features = [
     "stream",
 ] }
 # note: this dependency should _always_ be pinned, prefix the version with an `=`
-router-bridge = "=0.5.1+v2.5.1"
+# router-bridge = "=0.5.1+v2.5.1"
+# router-bridge = { path = "../../federation-rs/federation-2/router-bridge" }
+router-bridge = { git = "https://github.com/apollographql/federation-rs", branch = "garypen/router-bridge-spawn" }
 rust-embed="6.8.1"
 rustls = "0.21.6"
 rustls-pemfile = "1.0.3"
