@@ -61,7 +61,13 @@ RUN apt-get update -y \
 
 # Copy in the required files from our build image
 COPY --from=build --chown=root:root /dist /dist
-COPY --from=build --chown=root:root /usr/src/router/node_planner /dist
+COPY --from=build --chown=root:root /usr/src/router/node_planner /dist/node_planner
+
+# install and compile node code
+RUN cd node_planner \
+    && npm install \
+    && npm run compile \
+    && cd ..
 
 # If debug image, install heaptrack and make a data directory
 RUN \
