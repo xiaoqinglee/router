@@ -6,11 +6,19 @@ FROM rust:1.71.1 as build
 WORKDIR /usr/src/router
 
 # Update our build image and install required packages
-RUN apt-get update
+RUN apt-get update -y
 RUN apt-get -y install \
-    npm \
-    nodejs \
-    protobuf-compiler
+    protobuf-compiler \
+    curl \
+    cmake
+
+# Install node 18
+RUN curl -sL https://deb.nodesource.com/setup_18.x | bash -
+
+RUN apt-get update -y \
+    && apt-get upgrade -y \
+    && apt-get -y install \
+    nodejs # includes npm
 
 # Add rustfmt since build requires it
 RUN rustup component add rustfmt
@@ -40,7 +48,16 @@ WORKDIR /dist
 RUN \
   apt-get update -y \
   && apt-get install -y \
-    ca-certificates
+    ca-certificates \
+    curl
+
+# Install node 18
+RUN curl -sL https://deb.nodesource.com/setup_18.x | bash -
+
+RUN apt-get update -y \
+    && apt-get upgrade -y \
+    && apt-get -y install \
+    nodejs # includes npm
 
 # Copy in the required files from our build image
 COPY --from=build --chown=root:root /dist /dist
