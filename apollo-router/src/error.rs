@@ -31,6 +31,7 @@ use crate::spec::SpecError;
 #[ignore_extra_doc_attributes]
 #[non_exhaustive]
 #[allow(missing_docs)] // FIXME
+#[cfg(not(feature = "custom_to_graphql_error"))]
 pub(crate) enum FetchError {
     /// invalid type for variable: '{name}'
     ValidationInvalidTypeVariable {
@@ -115,6 +116,101 @@ pub(crate) enum FetchError {
     },
 }
 
+/// Error types for execution.
+///
+/// Note that these are not actually returned to the client, but are instead converted to JSON for
+/// [`struct@Error`].
+#[cfg(feature = "custom_to_graphql_error")]
+#[derive(Error, Display, Debug, Clone, Serialize, Eq, PartialEq)]
+#[serde(untagged)]
+#[ignore_extra_doc_attributes]
+#[non_exhaustive]
+#[allow(missing_docs)] // FIXME
+pub enum FetchError {
+    /// invalid type for variable: '{name}'
+    ValidationInvalidTypeVariable {
+        /// Name of the variable.
+        name: String,
+    },
+
+    /// query could not be planned: {reason}
+    ValidationPlanningError {
+        /// The failure reason.
+        reason: String,
+    },
+
+    /// request was malformed: {reason}
+    MalformedRequest {
+        /// The reason the serialization failed.
+        reason: String,
+    },
+
+    /// response was malformed: {reason}
+    MalformedResponse {
+        /// The reason the serialization failed.
+        reason: String,
+    },
+
+    /// service '{service}' response was malformed: {reason}
+    SubrequestMalformedResponse {
+        /// The service that responded with the malformed response.
+        service: String,
+
+        /// The reason the serialization failed.
+        reason: String,
+    },
+
+    /// service '{service}' returned a PATCH response which was not expected
+    SubrequestUnexpectedPatchResponse {
+        /// The service that returned the PATCH response.
+        service: String,
+    },
+
+    /// HTTP fetch failed from '{service}': {reason}
+    ///
+    /// note that this relates to a transport error and not a GraphQL error
+    SubrequestHttpError {
+        status_code: Option<u16>,
+
+        /// The service failed.
+        service: String,
+
+        /// The reason the fetch failed.
+        reason: String,
+    },
+    /// Websocket fetch failed from '{service}': {reason}
+    ///
+    /// note that this relates to a transport error and not a GraphQL error
+    SubrequestWsError {
+        /// The service failed.
+        service: String,
+
+        /// The reason the fetch failed.
+        reason: String,
+    },
+
+    /// subquery requires field '{field}' but it was not found in the current response
+    ExecutionFieldNotFound {
+        /// The field that is not found.
+        field: String,
+    },
+
+    #[cfg(test)]
+    /// invalid content: {reason}
+    ExecutionInvalidContent { reason: String },
+
+    /// could not find path: {reason}
+    ExecutionPathNotFound { reason: String },
+    /// could not compress request: {reason}
+    CompressionError {
+        /// The service that failed.
+        service: String,
+        /// The reason the compression failed.
+        reason: String,
+    },
+}
+
+#[cfg(not(feature = "custom_to_graphql_error"))]
 impl FetchError {
     /// Convert the fetch error to a GraphQL error.
     pub(crate) fn to_graphql_error(&self, path: Option<Path>) -> Error {
@@ -167,6 +263,42 @@ impl FetchError {
             path,
             extensions: value.as_object().unwrap().to_owned(),
         }
+    }
+
+    /// Convert the error to an appropriate response.
+    pub(crate) fn to_response(&self) -> Response {
+        Response {
+            errors: vec![self.to_graphql_error(None)],
+            ..Response::default()
+        }
+    }
+}
+
+#[cfg(feature = "custom_to_graphql_error")]
+use std::sync::OnceLock;
+#[cfg(feature = "custom_to_graphql_error")]
+static mut TO_GRAPHQL_ERROR: OnceLock<Box<dyn Fn(&FetchError, Option<Path>) -> Error + 'static>> =
+    OnceLock::new();
+#[cfg(feature = "custom_to_graphql_error")]
+pub unsafe fn set_to_graphql_error(
+    to_graphql_error: impl Fn(&FetchError, Option<Path>) -> Error + 'static,
+) {
+    TO_GRAPHQL_ERROR
+        .set(Box::new(to_graphql_error))
+        .map_err(|_| "to_graphql_error was already set")
+        .unwrap();
+}
+
+#[cfg(feature = "custom_to_graphql_error")]
+impl FetchError {
+    /// Convert the fetch error to a GraphQL error.
+    pub(crate) fn to_graphql_error(&self, path: Option<Path>) -> Error {
+        let callback = unsafe {
+            TO_GRAPHQL_ERROR
+                .get()
+                .expect("to_graphql_error was not set")
+        };
+        callback(self, path)
     }
 
     /// Convert the error to an appropriate response.

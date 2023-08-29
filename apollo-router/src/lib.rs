@@ -92,6 +92,13 @@ pub use crate::test_harness::MockedSubgraphs;
 pub use crate::test_harness::TestHarness;
 pub use crate::uplink::UplinkConfig;
 
+#[cfg(feature = "custom_to_graphql_error")]
+pub use error::set_to_graphql_error;
+#[cfg(feature = "custom_to_graphql_error")]
+pub use error::FetchError;
+#[cfg(feature = "custom_to_graphql_error")]
+pub use json_ext::Path;
+
 /// Not part of the public API
 #[doc(hidden)]
 pub mod _private {
