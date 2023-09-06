@@ -1,4 +1,5 @@
 //! Router errors.
+use std::io::IsTerminal;
 use std::sync::Arc;
 
 use displaydoc::Display;
@@ -293,6 +294,9 @@ pub(crate) enum QueryPlannerError {
 
     /// complexity limit exceeded
     LimitExceeded(OperationLimits<bool>),
+
+    /// Unauthorized field or type
+    Unauthorized(Vec<Path>),
 }
 
 impl IntoGraphQLErrors for QueryPlannerError {
@@ -550,7 +554,7 @@ impl ValidationErrors {
     pub(crate) fn print(&self) {
         if LevelFilter::current() == LevelFilter::OFF && cfg!(not(debug_assertions)) {
             return;
-        } else if atty::is(atty::Stream::Stdout) {
+        } else if std::io::stdout().is_terminal() {
             // Fancy reports for TTYs
             self.errors.iter().for_each(|err| {
                 // `format!` works around https://github.com/rust-lang/rust/issues/107118

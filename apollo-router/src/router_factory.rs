@@ -173,7 +173,7 @@ impl RouterSuperServiceFactory for YamlRouterFactory {
         if config_changed {
             configuration
                 .notify
-                .broadcast_configuration(configuration.clone());
+                .broadcast_configuration(Arc::downgrade(&configuration));
         }
 
         let schema = bridge_query_planner.schema();
@@ -201,8 +201,6 @@ impl RouterSuperServiceFactory for YamlRouterFactory {
         let query_parsing_layer =
             QueryAnalysisLayer::new(supergraph_creator.schema(), Arc::clone(&configuration)).await;
 
-        let mut persisted_query_manifest_poller = None;
-
         if let Some(previous_router) = previous_router {
             if configuration.supergraph.query_planning.warmed_up_queries > 0 {
                 let cache_keys = previous_router
@@ -220,20 +218,12 @@ impl RouterSuperServiceFactory for YamlRouterFactory {
                         .await;
                 }
             }
-
-            // capture the manifest poller for persisted queries and pass it on to the new router
-            // so it can keep running without needing to re-fetch every single operation on reload.
-            persisted_query_manifest_poller = previous_router
-                .persisted_query_layer
-                .manifest_poller
-                .clone();
         };
 
         Ok(Self::RouterFactory::new(
             query_parsing_layer,
             Arc::new(supergraph_creator),
             configuration,
-            persisted_query_manifest_poller,
         )
         .await?)
     }
@@ -426,7 +416,7 @@ fn load_certs(certificates: &str) -> io::Result<Vec<rustls::Certificate>> {
 pub async fn create_test_service_factory_from_yaml(schema: &str, configuration: &str) {
     let config: Configuration = serde_yaml::from_str(configuration).unwrap();
 
-    let service = YamlRouterFactory::default()
+    let service = YamlRouterFactory
         .create(Arc::new(config), schema.to_string(), None, None)
         .await;
     assert_eq!(
@@ -583,9 +573,11 @@ pub(crate) async fn create_plugins(
 
 fn inject_schema_id(schema: &Schema, configuration: &mut Value) {
     if configuration.get("apollo").is_none() {
+        /*FIXME: do we really need to set a default configuration for telemetry.apollo ?
         if let Some(telemetry) = configuration.as_object_mut() {
             telemetry.insert("apollo".to_string(), Value::Object(Default::default()));
-        }
+        }*/
+        return;
     }
     if let (Some(schema_id), Some(apollo)) = (
         &schema.api_schema().schema_id,
@@ -730,7 +722,7 @@ mod test {
     async fn create_service(config: Configuration) -> Result<(), BoxError> {
         let schema = include_str!("testdata/supergraph.graphql");
 
-        let service = YamlRouterFactory::default()
+        let service = YamlRouterFactory
             .create(Arc::new(config), schema.to_string(), None, None)
             .await;
         service.map(|_| ())
@@ -740,7 +732,7 @@ mod test {
     fn test_inject_schema_id() {
         let schema = include_str!("testdata/starstuff@current.graphql");
         let schema = Schema::parse_test(schema, &Default::default()).unwrap();
-        let mut config = json!({});
+        let mut config = json!({ "apollo": {} });
         inject_schema_id(&schema, &mut config);
         let config =
             serde_json::from_value::<crate::plugins::telemetry::config::Conf>(config).unwrap();
