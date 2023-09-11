@@ -322,19 +322,12 @@ impl ExecutionService {
                     if let Value::Array(array) = value {
                         let mut parent = path.clone();
                         for (i, value) in array.iter().enumerate() {
-                            let el = PathElement::Index(i);
-                            parent.push(&el);
-                            sub_responses.push((
-                                Path(parent.iter().map(|p| (*p).to_owned()).collect()),
-                                value.clone(),
-                            ));
+                            parent.push(PathElement::Index(i));
+                            sub_responses.push((parent.clone(), value.clone()));
                             parent.pop();
                         }
                     } else {
-                        sub_responses.push((
-                            Path(path.iter().map(|p| (*p).to_owned()).collect()),
-                            value.clone(),
-                        ));
+                        sub_responses.push((path.clone(), value.clone()));
                     }
                 });
 

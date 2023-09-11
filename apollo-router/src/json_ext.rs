@@ -76,10 +76,6 @@ pub(crate) trait ValueExt {
     #[track_caller]
     fn insert(&mut self, path: &Path, value: Value) -> Result<(), FetchError>;
 
-    /// Insert a `Value` at a borrowed `Path`
-    #[track_caller]
-    fn insert_borrowed(&mut self, path: &[&PathElement], value: Value) -> Result<(), FetchError>;
-
     /// Get a `Value` from a `Path`
     #[track_caller]
     fn get_path<'a>(&'a self, schema: &Schema, path: &'a Path) -> Result<&'a Value, FetchError>;
@@ -91,7 +87,7 @@ pub(crate) trait ValueExt {
     #[track_caller]
     fn select_values_and_paths<'a, F>(&'a self, schema: &Schema, path: &'a Path, f: F)
     where
-        F: FnMut(&'a Vec<&'a PathElement>, &'a Value);
+        F: FnMut(&Path, &'a Value);
 
     /// Select all values matching a `Path`, and allows to mutate those values.
     ///
@@ -99,7 +95,7 @@ pub(crate) trait ValueExt {
     #[track_caller]
     fn select_values_and_paths_mut<'a, F>(&'a mut self, schema: &Schema, path: &'a Path, f: F)
     where
-        F: FnMut(&'a Vec<&'a PathElement>, &'a mut Value);
+        F: FnMut(&Path, &'a mut Value);
 
     #[track_caller]
     fn is_valid_float_input(&self) -> bool;
@@ -364,110 +360,38 @@ impl ValueExt for Value {
         Ok(())
     }
 
-    /// Insert a `Value` at a `Path`
-    #[track_caller]
-    fn insert_borrowed(&mut self, path: &[&PathElement], value: Value) -> Result<(), FetchError> {
-        let mut current_node = self;
-
-        for p in path.iter() {
-            match p {
-                PathElement::Flatten => {
-                    if current_node.is_null() {
-                        let a = Vec::new();
-                        *current_node = Value::Array(a);
-                    } else if !current_node.is_array() {
-                        return Err(FetchError::ExecutionPathNotFound {
-                            reason: "expected an array".to_string(),
-                        });
-                    }
-                }
-
-                &PathElement::Index(index) => match current_node {
-                    Value::Array(a) => {
-                        // add more elements if the index is after the end
-                        for _ in a.len()..index + 1 {
-                            a.push(Value::default());
-                        }
-                        current_node = a
-                            .get_mut(*index)
-                            .expect("we just created the value at that index");
-                    }
-                    Value::Null => {
-                        let mut a = Vec::new();
-                        for _ in 0..index + 1 {
-                            a.push(Value::default());
-                        }
-
-                        *current_node = Value::Array(a);
-                        current_node = current_node
-                            .as_array_mut()
-                            .expect("current_node was just set to a Value::Array")
-                            .get_mut(*index)
-                            .expect("we just created the value at that index");
-                    }
-                    _other => {
-                        return Err(FetchError::ExecutionPathNotFound {
-                            reason: "expected an array".to_string(),
-                        })
-                    }
-                },
-                PathElement::Key(k) => match current_node {
-                    Value::Object(o) => {
-                        current_node = o
-                            .get_mut(k.as_str())
-                            .expect("the value at that key was just inserted");
-                    }
-                    Value::Null => {
-                        let mut m = Map::new();
-                        m.insert(k.as_str(), Value::default());
-
-                        *current_node = Value::Object(m);
-                        current_node = current_node
-                            .as_object_mut()
-                            .expect("current_node was just set to a Value::Object")
-                            .get_mut(k.as_str())
-                            .expect("the value at that key was just inserted");
-                    }
-                    _other => {
-                        return Err(FetchError::ExecutionPathNotFound {
-                            reason: "expected an object".to_string(),
-                        })
-                    }
-                },
-                PathElement::Fragment(_) => {}
-            }
-        }
-
-        *current_node = value;
-        Ok(())
-    }
-
     /// Get a `Value` from a `Path`
     #[track_caller]
     fn get_path<'a>(&'a self, schema: &Schema, path: &'a Path) -> Result<&'a Value, FetchError> {
         let mut res = Err(FetchError::ExecutionPathNotFound {
             reason: "value not found".to_string(),
         });
-        iterate_path(schema, &mut vec![], &path.0, self, &mut |_path, value| {
-            res = Ok(value);
-        });
+        iterate_path(
+            schema,
+            &mut Path::default(),
+            &path.0,
+            self,
+            &mut |_path, value| {
+                res = Ok(value);
+            },
+        );
         res
     }
 
     #[track_caller]
     fn select_values_and_paths<'a, F>(&'a self, schema: &Schema, path: &'a Path, mut f: F)
     where
-        F: FnMut(&'a Vec<&'a PathElement>, &'a Value),
+        F: FnMut(&Path, &'a Value),
     {
-        iterate_path(schema, &mut vec![], &path.0, self, &mut f)
+        iterate_path(schema, &mut Path::default(), &path.0, self, &mut f)
     }
 
     #[track_caller]
     fn select_values_and_paths_mut<'a, F>(&'a mut self, schema: &Schema, path: &'a Path, mut f: F)
     where
-        F: FnMut(&'a Vec<&'a PathElement>, &'a mut Value),
+        F: FnMut(&Path, &'a mut Value),
     {
-        iterate_path_mut(schema, &mut vec![], &path.0, self, &mut f)
+        iterate_path_mut(schema, &mut Path::default(), &path.0, self, &mut f)
     }
 
     #[track_caller]
@@ -505,21 +429,21 @@ impl ValueExt for Value {
     }
 }
 
-fn iterate_path<'a, 'b: 'a, F>(
+fn iterate_path<'a, F>(
     schema: &Schema,
-    parent: &'b mut Vec<&'a PathElement>,
+    parent: &mut Path,
     path: &'a [PathElement],
     data: &'a Value,
-    f: &'a mut F,
+    f: &mut F,
 ) where
-    F: FnMut(&'b Vec<&'a PathElement>, &'a Value),
+    F: FnMut(&Path, &'a Value),
 {
     match path.get(0) {
         None => f(parent, data),
         Some(PathElement::Flatten) => {
             if let Some(array) = data.as_array() {
                 for (i, value) in array.iter().enumerate() {
-                    parent.push(&PathElement::Index(i));
+                    parent.push(PathElement::Index(i));
                     iterate_path(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
@@ -528,23 +452,23 @@ fn iterate_path<'a, 'b: 'a, F>(
         Some(PathElement::Index(i)) => {
             if let Value::Array(a) = data {
                 if let Some(value) = a.get(*i) {
-                    parent.push(&PathElement::Index(*i));
+                    parent.push(PathElement::Index(*i));
 
                     iterate_path(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
             }
         }
-        Some(&PathElement::Key(ref k)) => {
+        Some(PathElement::Key(k)) => {
             if let Value::Object(o) = data {
                 if let Some(value) = o.get(k.as_str()) {
-                    parent.push(&PathElement::Key(*k));
+                    parent.push(PathElement::Key(k.to_string()));
                     iterate_path(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter().enumerate() {
-                    parent.push(&PathElement::Index(i));
+                    parent.push(PathElement::Index(i));
                     iterate_path(schema, parent, path, value, f);
                     parent.pop();
                 }
@@ -560,7 +484,7 @@ fn iterate_path<'a, 'b: 'a, F>(
                 iterate_path(schema, parent, &path[1..], data, f);
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter().enumerate() {
-                    parent.push(&PathElement::Index(i));
+                    parent.push(PathElement::Index(i));
                     iterate_path(schema, parent, path, value, f);
                     parent.pop();
                 }
@@ -571,19 +495,19 @@ fn iterate_path<'a, 'b: 'a, F>(
 
 fn iterate_path_mut<'a, F>(
     schema: &Schema,
-    parent: &'a mut Vec<&'a PathElement>,
+    parent: &mut Path,
     path: &'a [PathElement],
     data: &'a mut Value,
     f: &mut F,
 ) where
-    F: FnMut(&'a Vec<&'a PathElement>, &'a mut Value),
+    F: FnMut(&Path, &'a mut Value),
 {
     match path.get(0) {
         None => f(parent, data),
         Some(PathElement::Flatten) => {
             if let Some(array) = data.as_array_mut() {
                 for (i, value) in array.iter_mut().enumerate() {
-                    parent.push(&PathElement::Index(i));
+                    parent.push(PathElement::Index(i));
                     iterate_path_mut(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
@@ -592,22 +516,22 @@ fn iterate_path_mut<'a, F>(
         Some(PathElement::Index(i)) => {
             if let Value::Array(a) = data {
                 if let Some(value) = a.get_mut(*i) {
-                    parent.push(&PathElement::Index(*i));
+                    parent.push(PathElement::Index(*i));
                     iterate_path_mut(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
             }
         }
-        Some(&PathElement::Key(k)) => {
+        Some(PathElement::Key(k)) => {
             if let Value::Object(o) = data {
                 if let Some(value) = o.get_mut(k.as_str()) {
-                    parent.push(&PathElement::Key(k));
+                    parent.push(PathElement::Key(k.to_string()));
                     iterate_path_mut(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter_mut().enumerate() {
-                    parent.push(&PathElement::Index(i));
+                    parent.push(PathElement::Index(i));
                     iterate_path_mut(schema, parent, path, value, f);
                     parent.pop();
                 }
@@ -618,7 +542,7 @@ fn iterate_path_mut<'a, F>(
                 iterate_path_mut(schema, parent, &path[1..], data, f);
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter_mut().enumerate() {
-                    parent.push(&PathElement::Index(i));
+                    parent.push(PathElement::Index(i));
                     iterate_path_mut(schema, parent, path, value, f);
                     parent.pop();
                 }

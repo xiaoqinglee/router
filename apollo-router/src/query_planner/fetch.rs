@@ -3,7 +3,6 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use indexmap::IndexSet;
-use json_ext::PathElement;
 use serde::Deserialize;
 use serde::Serialize;
 use tower::ServiceExt;
@@ -97,23 +96,23 @@ pub(crate) struct FetchNode {
     pub(crate) output_rewrites: Option<Vec<rewrites::DataRewrite>>,
 }
 
-pub(crate) struct Variables<'a> {
+pub(crate) struct Variables {
     pub(crate) variables: Object,
-    pub(crate) paths: HashMap<Vec<&'a PathElement>, usize>,
+    pub(crate) paths: HashMap<Path, usize>,
 }
 
-impl<'a> Variables<'a> {
+impl Variables {
     #[instrument(skip_all, level = "debug", name = "make_variables")]
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn new(
         requires: &[Selection],
         variable_usages: &[String],
-        data: &'a Value,
-        current_dir: &'a Path,
+        data: &Value,
+        current_dir: &Path,
         request: &Arc<http::Request<Request>>,
         schema: &Schema,
         input_rewrites: &Option<Vec<rewrites::DataRewrite>>,
-    ) -> Option<Variables<'a>> {
+    ) -> Option<Variables> {
         let body = request.body();
         if !requires.is_empty() {
             let mut variables = Object::with_capacity(1 + variable_usages.len());
@@ -124,7 +123,7 @@ impl<'a> Variables<'a> {
                     .map(|(variable_key, value)| (variable_key.clone(), value.clone()))
             }));
 
-            let mut paths: HashMap<Vec<&PathElement>, usize> = HashMap::new();
+            let mut paths: HashMap<Path, usize> = HashMap::new();
             let mut values: IndexSet<Value> = IndexSet::new();
 
             data.select_values_and_paths(schema, current_dir, |path, value| {
@@ -320,11 +319,11 @@ impl FetchNode {
         &'a self,
         schema: &Schema,
         current_dir: &'a Path,
-        paths: HashMap<Vec<&'a PathElement>, usize>,
+        paths: HashMap<Path, usize>,
         response: graphql::Response,
     ) -> (Value, Vec<Error>) {
         // for each entity in the response, find out the path where it must be inserted
-        let mut inverted_paths: HashMap<usize, Vec<&Vec<&PathElement>>> = HashMap::new();
+        let mut inverted_paths: HashMap<usize, Vec<&Path>> = HashMap::new();
         for (path, index) in paths.iter() {
             (*inverted_paths.entry(*index).or_default()).push(path);
         }
@@ -353,11 +352,7 @@ impl FetchNode {
                                         // append to the entitiy's path the error's path without
                                         //`_entities` and the index
                                         path: Some(Path::from_iter(
-                                            values_path
-                                                .iter()
-                                                .cloned()
-                                                .chain(&path.0[2..])
-                                                .cloned(),
+                                            values_path.0.iter().chain(&path.0[2..]).cloned(),
                                         )),
                                         message: error.message.clone(),
                                         extensions: error.extensions.clone(),
@@ -393,12 +388,12 @@ impl FetchNode {
                             if let Some(paths) = inverted_paths.get(&index) {
                                 if paths.len() > 1 {
                                     for path in &paths[1..] {
-                                        let _ = value.insert_borrowed(path, entity.clone());
+                                        let _ = value.insert(path, entity.clone());
                                     }
                                 }
 
                                 if let Some(path) = paths.first() {
-                                    let _ = value.insert_borrowed(path, entity);
+                                    let _ = value.insert(path, entity);
                                 }
                             }
                         }
