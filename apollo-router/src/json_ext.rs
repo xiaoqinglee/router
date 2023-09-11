@@ -87,7 +87,7 @@ pub(crate) trait ValueExt {
     #[track_caller]
     fn select_values_and_paths<'a, F>(&'a self, schema: &Schema, path: &'a Path, f: F)
     where
-        F: FnMut(&Path, &'a Value);
+        F: for<'b> FnMut(&'b BorrowedPath<'a>, &'a Value);
 
     /// Select all values matching a `Path`, and allows to mutate those values.
     ///
@@ -368,7 +368,7 @@ impl ValueExt for Value {
         });
         iterate_path(
             schema,
-            &mut Path::default(),
+            &mut BorrowedPath::default(),
             &path.0,
             self,
             &mut |_path, value| {
@@ -381,9 +381,9 @@ impl ValueExt for Value {
     #[track_caller]
     fn select_values_and_paths<'a, F>(&'a self, schema: &Schema, path: &'a Path, mut f: F)
     where
-        F: FnMut(&Path, &'a Value),
+        F: for<'b> FnMut(&'b BorrowedPath<'a>, &'a Value),
     {
-        iterate_path(schema, &mut Path::default(), &path.0, self, &mut f)
+        iterate_path(schema, &mut BorrowedPath::default(), &path.0, self, &mut f)
     }
 
     #[track_caller]
@@ -431,19 +431,19 @@ impl ValueExt for Value {
 
 fn iterate_path<'a, F>(
     schema: &Schema,
-    parent: &mut Path,
+    parent: &mut BorrowedPath<'a>,
     path: &'a [PathElement],
     data: &'a Value,
     f: &mut F,
 ) where
-    F: FnMut(&Path, &'a Value),
+    F: FnMut(&BorrowedPath<'a>, &'a Value),
 {
     match path.get(0) {
         None => f(parent, data),
         Some(PathElement::Flatten) => {
             if let Some(array) = data.as_array() {
                 for (i, value) in array.iter().enumerate() {
-                    parent.push(PathElement::Index(i));
+                    parent.push(BorrowedPathElement::Index(i));
                     iterate_path(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
@@ -452,7 +452,7 @@ fn iterate_path<'a, F>(
         Some(PathElement::Index(i)) => {
             if let Value::Array(a) = data {
                 if let Some(value) = a.get(*i) {
-                    parent.push(PathElement::Index(*i));
+                    parent.push(BorrowedPathElement::Index(*i));
 
                     iterate_path(schema, parent, &path[1..], value, f);
                     parent.pop();
@@ -462,13 +462,13 @@ fn iterate_path<'a, F>(
         Some(PathElement::Key(k)) => {
             if let Value::Object(o) = data {
                 if let Some(value) = o.get(k.as_str()) {
-                    parent.push(PathElement::Key(k.to_string()));
+                    parent.push(BorrowedPathElement::Key(k.as_str()));
                     iterate_path(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter().enumerate() {
-                    parent.push(PathElement::Index(i));
+                    parent.push(BorrowedPathElement::Index(i));
                     iterate_path(schema, parent, path, value, f);
                     parent.pop();
                 }
@@ -484,7 +484,7 @@ fn iterate_path<'a, F>(
                 iterate_path(schema, parent, &path[1..], data, f);
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter().enumerate() {
-                    parent.push(PathElement::Index(i));
+                    parent.push(BorrowedPathElement::Index(i));
                     iterate_path(schema, parent, path, value, f);
                     parent.pop();
                 }
@@ -575,6 +575,44 @@ pub enum PathElement {
 
     /// A key path element.
     Key(String),
+}
+
+impl<'a> From<BorrowedPathElement<'a>> for PathElement {
+    fn from(value: BorrowedPathElement<'a>) -> Self {
+        match value {
+            BorrowedPathElement::Index(index) => PathElement::Index(index),
+            BorrowedPathElement::Key(s) => PathElement::Key(s.to_string()),
+            BorrowedPathElement::Flatten => PathElement::Flatten,
+            BorrowedPathElement::Fragment(f) => PathElement::Fragment(f.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Default, Hash)]
+pub(crate) struct BorrowedPath<'a>(pub Vec<BorrowedPathElement<'a>>);
+
+impl<'a> BorrowedPath<'a> {
+    pub fn push(&mut self, element: BorrowedPathElement<'a>) {
+        self.0.push(element)
+    }
+
+    pub fn pop(&mut self) -> Option<BorrowedPathElement<'a>> {
+        self.0.pop()
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum BorrowedPathElement<'a> {
+    /// A path element that given an array will flatmap the content.
+    Flatten,
+
+    /// An index path element.
+    Index(usize),
+
+    /// A fragment application
+    Fragment(&'a str),
+
+    /// A key path element.
+    Key(&'a str),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -696,6 +734,10 @@ impl Path {
         )
     }
 
+    pub fn from_borrowed_slice(s: &[BorrowedPathElement]) -> Self {
+        Self(s.iter().map(|x| (*x).into()).collect())
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &PathElement> {
         self.0.iter()
     }
@@ -755,6 +797,12 @@ impl Path {
 impl FromIterator<PathElement> for Path {
     fn from_iter<T: IntoIterator<Item = PathElement>>(iter: T) -> Self {
         Path(iter.into_iter().collect())
+    }
+}
+
+impl<'a> From<BorrowedPath<'a>> for Path {
+    fn from(value: BorrowedPath<'a>) -> Self {
+        Self::from_borrowed_slice(&value.0)
     }
 }
 
