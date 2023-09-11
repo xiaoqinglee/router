@@ -493,6 +493,74 @@ fn iterate_path<'a, F>(
     }
 }
 
+fn iterate_path2<'a: 'b, 'b, 'c, F>(
+    schema: &Schema,
+    parent: &'b mut Vec<&'c PathElement>,
+    path: &'a [PathElement],
+    data: &'a Value,
+    f: &'a mut F,
+) where
+    F: FnMut(&'b Vec<&'c PathElement>, &'a Value),
+{
+    match path.get(0) {
+        None => f(parent, data),
+        Some(PathElement::Flatten) => {
+            if let Some(array) = data.as_array() {
+                for (i, value) in array.iter().enumerate() {
+                    {
+                        parent.push(&PathElement::Index(i));
+                    }
+                    iterate_path2(schema, parent, &path[1..], value, f);
+                    {
+                        parent.pop();
+                    }
+                }
+            }
+        }
+        Some(PathElement::Index(i)) => {
+            if let Value::Array(a) = data {
+                if let Some(value) = a.get(*i) {
+                    parent.push(&PathElement::Index(*i));
+
+                    iterate_path2(schema, parent, &path[1..], value, f);
+                    parent.pop();
+                }
+            }
+        }
+        Some(&PathElement::Key(ref k)) => {
+            if let Value::Object(o) = data {
+                if let Some(value) = o.get(k.as_str()) {
+                    parent.push(&PathElement::Key(*k));
+                    iterate_path2(schema, parent, &path[1..], value, f);
+                    parent.pop();
+                }
+            } else if let Value::Array(array) = data {
+                for (i, value) in array.iter().enumerate() {
+                    parent.push(&PathElement::Index(i));
+                    iterate_path2(schema, parent, path, value, f);
+                    parent.pop();
+                }
+            }
+        }
+        Some(PathElement::Fragment(name)) => {
+            if data.is_object_of_type(schema, name) {
+                // Note that (not unlike `Flatten`) we do not include the fragment in the `parent`
+                // path, because we want that path to be a "pure" response path. Fragments in path
+                // are used to essentially create a type-based choice in a "selection" path, but
+                // `parent` is a direct path to a specific position in the value and do not need
+                // fragments.
+                iterate_path2(schema, parent, &path[1..], data, f);
+            } else if let Value::Array(array) = data {
+                for (i, value) in array.iter().enumerate() {
+                    parent.push(&PathElement::Index(i));
+                    iterate_path2(schema, parent, path, value, f);
+                    parent.pop();
+                }
+            }
+        }
+    }
+}
+
 fn iterate_path_mut<'a, F>(
     schema: &Schema,
     parent: &mut Path,
