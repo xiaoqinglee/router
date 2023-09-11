@@ -19,7 +19,6 @@ use crate::graphql;
 use crate::graphql::Request;
 use crate::http_ext;
 use crate::json_ext;
-use crate::json_ext::BorrowedPath;
 use crate::json_ext::Object;
 use crate::json_ext::Path;
 use crate::json_ext::Value;
@@ -97,23 +96,23 @@ pub(crate) struct FetchNode {
     pub(crate) output_rewrites: Option<Vec<rewrites::DataRewrite>>,
 }
 
-pub(crate) struct Variables<'a> {
+pub(crate) struct Variables {
     pub(crate) variables: Object,
-    pub(crate) paths: HashMap<BorrowedPath<'a>, usize>,
+    pub(crate) paths: HashMap<Path, usize>,
 }
 
-impl<'a> Variables<'a> {
+impl Variables {
     #[instrument(skip_all, level = "debug", name = "make_variables")]
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn new(
         requires: &[Selection],
         variable_usages: &[String],
-        data: &'a Value,
-        current_dir: &'a Path,
+        data: &Value,
+        current_dir: &Path,
         request: &Arc<http::Request<Request>>,
         schema: &Schema,
         input_rewrites: &Option<Vec<rewrites::DataRewrite>>,
-    ) -> Option<Variables<'a>> {
+    ) -> Option<Variables> {
         let body = request.body();
         if !requires.is_empty() {
             let mut variables = Object::with_capacity(1 + variable_usages.len());
@@ -124,7 +123,7 @@ impl<'a> Variables<'a> {
                     .map(|(variable_key, value)| (variable_key.clone(), value.clone()))
             }));
 
-            let mut paths: HashMap<BorrowedPath<'a>, usize> = HashMap::new();
+            let mut paths: HashMap<Path, usize> = HashMap::new();
             let mut values: IndexSet<Value> = IndexSet::new();
 
             data.select_values_and_paths(schema, current_dir, |path, value| {
@@ -232,7 +231,6 @@ impl FetchNode {
             }
         };
 
-        //println!("will call subgraph {service_name}: op={operation_name:?}, vars={variables:?}\n{operation}");
         let subgraph_request = SubgraphRequest::builder()
             .supergraph_request(parameters.supergraph_request.clone())
             .subgraph_request(
@@ -321,11 +319,11 @@ impl FetchNode {
         &'a self,
         schema: &Schema,
         current_dir: &'a Path,
-        paths: HashMap<BorrowedPath<'a>, usize>,
+        paths: HashMap<Path, usize>,
         response: graphql::Response,
     ) -> (Value, Vec<Error>) {
         // for each entity in the response, find out the path where it must be inserted
-        let mut inverted_paths: HashMap<usize, Vec<&BorrowedPath<'a>>> = HashMap::new();
+        let mut inverted_paths: HashMap<usize, Vec<&Path>> = HashMap::new();
         for (path, index) in paths.iter() {
             (*inverted_paths.entry(*index).or_default()).push(path);
         }
@@ -354,11 +352,7 @@ impl FetchNode {
                                         // append to the entitiy's path the error's path without
                                         //`_entities` and the index
                                         path: Some(Path::from_iter(
-                                            values_path
-                                                .0
-                                                .iter()
-                                                .map(|elem| (*elem).into())
-                                                .chain((&path.0[2..]).iter().cloned()),
+                                            values_path.0.iter().chain(&path.0[2..]).cloned(),
                                         )),
                                         message: error.message.clone(),
                                         extensions: error.extensions.clone(),
@@ -394,12 +388,12 @@ impl FetchNode {
                             if let Some(paths) = inverted_paths.get(&index) {
                                 if paths.len() > 1 {
                                     for path in &paths[1..] {
-                                        let _ = value.insert((*path).into(), entity.clone());
+                                        let _ = value.insert(path, entity.clone());
                                     }
                                 }
 
                                 if let Some(path) = paths.first() {
-                                    let _ = value.insert((*path).into(), entity);
+                                    let _ = value.insert(path, entity);
                                 }
                             }
                         }

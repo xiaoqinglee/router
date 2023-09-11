@@ -32,7 +32,6 @@ use super::SubgraphServiceFactory;
 use crate::graphql::Error;
 use crate::graphql::IncrementalResponse;
 use crate::graphql::Response;
-use crate::json_ext::BorrowedPathElement;
 use crate::json_ext::Object;
 use crate::json_ext::Path;
 use crate::json_ext::PathElement;
@@ -323,13 +322,12 @@ impl ExecutionService {
                     if let Value::Array(array) = value {
                         let mut parent = path.clone();
                         for (i, value) in array.iter().enumerate() {
-                            parent.push(BorrowedPathElement::Index(i));
-                            sub_responses
-                                .push((Path::from_borrowed_slice(&parent.0), value.clone()));
+                            parent.push(PathElement::Index(i));
+                            sub_responses.push((parent.clone(), value.clone()));
                             parent.pop();
                         }
                     } else {
-                        sub_responses.push((Path::from_borrowed_slice(&path.0), value.clone()));
+                        sub_responses.push((path.clone(), value.clone()));
                     }
                 });
 
