@@ -202,18 +202,6 @@ impl FetchNode {
 
         let Variables { variables, paths } = match tracing::info_span!("Variables::new")
             .in_scope(|| {
-                for _ in 0..1000 {
-                    let _ = Variables::new(
-                        &self.requires,
-                        self.variable_usages.as_ref(),
-                        data,
-                        current_dir,
-                        // Needs the original request here
-                        parameters.supergraph_request,
-                        parameters.schema,
-                        &self.input_rewrites,
-                    );
-                }
                 Variables::new(
                     &self.requires,
                     self.variable_usages.as_ref(),
@@ -395,30 +383,12 @@ impl FetchNode {
                             if let Some(paths) = inverted_paths.get(&index) {
                                 if paths.len() > 1 {
                                     for path in &paths[1..] {
-                                        let _ = value.insert(
-                                            &Path(
-                                                (*path)
-                                                    .0
-                                                    .iter()
-                                                    .map(|e| (*e).clone().into())
-                                                    .collect::<Vec<PathElement>>(),
-                                            ),
-                                            entity.clone(),
-                                        );
+                                        let _ = value.insert(path, entity.clone());
                                     }
                                 }
 
                                 if let Some(path) = paths.first() {
-                                    let _ = value.insert(
-                                        &Path(
-                                            (*path)
-                                                .0
-                                                .iter()
-                                                .map(|e| (*e).clone().into())
-                                                .collect::<Vec<PathElement>>(),
-                                        ),
-                                        entity,
-                                    );
+                                    let _ = value.insert(path, entity);
                                 }
                             }
                         }

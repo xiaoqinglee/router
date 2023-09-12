@@ -72,9 +72,9 @@ pub(crate) trait ValueExt {
     #[track_caller]
     fn from_path(path: &Path, value: Value) -> Value;
 
-    /// Insert a `Value` at a `Path`
+    /// Insert a `Value` at a `BorrowedPath`
     #[track_caller]
-    fn insert(&mut self, path: &Path, value: Value) -> Result<(), FetchError>;
+    fn insert(&mut self, path: &BorrowedPath, value: Value) -> Result<(), FetchError>;
 
     /// Get a `Value` from a `Path`
     #[track_caller]
@@ -284,12 +284,12 @@ impl ValueExt for Value {
 
     /// Insert a `Value` at a `Path`
     #[track_caller]
-    fn insert(&mut self, path: &Path, value: Value) -> Result<(), FetchError> {
+    fn insert(&mut self, path: &BorrowedPath, value: Value) -> Result<(), FetchError> {
         let mut current_node = self;
 
-        for p in path.iter() {
+        for p in path.0.iter() {
             match p {
-                PathElement::Flatten => {
+                BorrowedPathElement::Flatten => {
                     if current_node.is_null() {
                         let a = Vec::new();
                         *current_node = Value::Array(a);
@@ -300,7 +300,7 @@ impl ValueExt for Value {
                     }
                 }
 
-                &PathElement::Index(index) => match current_node {
+                &BorrowedPathElement::Index(index) => match current_node {
                     Value::Array(a) => {
                         // add more elements if the index is after the end
                         for _ in a.len()..index + 1 {
@@ -329,21 +329,21 @@ impl ValueExt for Value {
                         })
                     }
                 },
-                PathElement::Key(k) => match current_node {
+                BorrowedPathElement::Key(k) => match current_node {
                     Value::Object(o) => {
                         current_node = o
-                            .get_mut(k.as_str())
+                            .get_mut(*k)
                             .expect("the value at that key was just inserted");
                     }
                     Value::Null => {
                         let mut m = Map::new();
-                        m.insert(k.as_str(), Value::default());
+                        m.insert::<ByteString>(k.to_string().into(), Value::default());
 
                         *current_node = Value::Object(m);
                         current_node = current_node
                             .as_object_mut()
                             .expect("current_node was just set to a Value::Object")
-                            .get_mut(k.as_str())
+                            .get_mut(*k)
                             .expect("the value at that key was just inserted");
                     }
                     _other => {
@@ -352,7 +352,7 @@ impl ValueExt for Value {
                         })
                     }
                 },
-                PathElement::Fragment(_) => {}
+                BorrowedPathElement::Fragment(_) => {}
             }
         }
 
