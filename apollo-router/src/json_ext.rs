@@ -289,17 +289,6 @@ impl ValueExt for Value {
 
         for p in path.0.iter() {
             match p {
-                BorrowedPathElement::Flatten => {
-                    if current_node.is_null() {
-                        let a = Vec::new();
-                        *current_node = Value::Array(a);
-                    } else if !current_node.is_array() {
-                        return Err(FetchError::ExecutionPathNotFound {
-                            reason: "expected an array".to_string(),
-                        });
-                    }
-                }
-
                 &BorrowedPathElement::Index(index) => match current_node {
                     Value::Array(a) => {
                         // add more elements if the index is after the end
@@ -352,7 +341,6 @@ impl ValueExt for Value {
                         })
                     }
                 },
-                BorrowedPathElement::Fragment(_) => {}
             }
         }
 
@@ -582,8 +570,6 @@ impl<'a> From<BorrowedPathElement<'a>> for PathElement {
         match value {
             BorrowedPathElement::Index(index) => PathElement::Index(index),
             BorrowedPathElement::Key(s) => PathElement::Key(s.to_string()),
-            BorrowedPathElement::Flatten => PathElement::Flatten,
-            BorrowedPathElement::Fragment(f) => PathElement::Fragment(f.to_string()),
         }
     }
 }
