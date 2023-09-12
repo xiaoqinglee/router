@@ -334,11 +334,11 @@ impl FetchNode {
         if !self.requires.is_empty() {
             let entities_path = Path(vec![json_ext::PathElement::Key("_entities".to_string())]);
 
-            let mut errors: Vec<Error> = vec![];
+            let mut errors: Vec<Error> = Vec::with_capacity(response.errors.len());
             for mut error in response.errors {
                 // the locations correspond to the subgraph query and cannot be linked to locations
                 // in the client query, so we remove them
-                error.locations = Vec::new();
+                error.locations.truncate(0);
 
                 // errors with path should be updated to the path of the entity they target
                 if let Some(ref path) = error.path {
