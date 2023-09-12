@@ -58,11 +58,13 @@ pub(crate) fn select_object(
         match selection {
             Selection::Field(field) => {
                 if let Some(value) = select_field(content, field, schema)? {
-                    match output.entry(field.name.to_owned()) {
-                        Entry::Occupied(mut existing) => existing.get_mut().deep_merge(value),
-                        Entry::Vacant(vacant) => {
-                            vacant.insert(value);
-                        }
+                    if let Some(o) = output.get_mut(field.name.as_str()) {
+                        o.deep_merge(value);
+                    } else {
+                        output.insert(
+                            serde_json_bytes::ByteString::from(field.name.as_str()),
+                            value,
+                        );
                     }
                 }
             }
