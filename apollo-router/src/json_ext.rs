@@ -95,7 +95,7 @@ pub(crate) trait ValueExt {
     #[track_caller]
     fn select_values_and_paths_mut<'a, F>(&'a mut self, schema: &Schema, path: &'a Path, f: F)
     where
-        F: FnMut(&Path, &'a mut Value);
+        F: FnMut(&BorrowedPath<'a>, &'a mut Value);
 
     #[track_caller]
     fn is_valid_float_input(&self) -> bool;
@@ -389,9 +389,9 @@ impl ValueExt for Value {
     #[track_caller]
     fn select_values_and_paths_mut<'a, F>(&'a mut self, schema: &Schema, path: &'a Path, mut f: F)
     where
-        F: FnMut(&Path, &'a mut Value),
+        F: FnMut(&BorrowedPath<'a>, &'a mut Value),
     {
-        iterate_path_mut(schema, &mut Path::default(), &path.0, self, &mut f)
+        iterate_path_mut(schema, &mut BorrowedPath::default(), &path.0, self, &mut f)
     }
 
     #[track_caller]
@@ -495,19 +495,19 @@ fn iterate_path<'a, F>(
 
 fn iterate_path_mut<'a, F>(
     schema: &Schema,
-    parent: &mut Path,
+    parent: &mut BorrowedPath<'a>,
     path: &'a [PathElement],
     data: &'a mut Value,
     f: &mut F,
 ) where
-    F: FnMut(&Path, &'a mut Value),
+    F: FnMut(&BorrowedPath<'a>, &'a mut Value),
 {
     match path.get(0) {
         None => f(parent, data),
         Some(PathElement::Flatten) => {
             if let Some(array) = data.as_array_mut() {
                 for (i, value) in array.iter_mut().enumerate() {
-                    parent.push(PathElement::Index(i));
+                    parent.push(BorrowedPathElement::Index(i));
                     iterate_path_mut(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
@@ -516,7 +516,7 @@ fn iterate_path_mut<'a, F>(
         Some(PathElement::Index(i)) => {
             if let Value::Array(a) = data {
                 if let Some(value) = a.get_mut(*i) {
-                    parent.push(PathElement::Index(*i));
+                    parent.push(BorrowedPathElement::Index(*i));
                     iterate_path_mut(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
@@ -525,13 +525,13 @@ fn iterate_path_mut<'a, F>(
         Some(PathElement::Key(k)) => {
             if let Value::Object(o) = data {
                 if let Some(value) = o.get_mut(k.as_str()) {
-                    parent.push(PathElement::Key(k.to_string()));
+                    parent.push(BorrowedPathElement::Key(k.as_str()));
                     iterate_path_mut(schema, parent, &path[1..], value, f);
                     parent.pop();
                 }
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter_mut().enumerate() {
-                    parent.push(PathElement::Index(i));
+                    parent.push(BorrowedPathElement::Index(i));
                     iterate_path_mut(schema, parent, path, value, f);
                     parent.pop();
                 }
@@ -542,7 +542,7 @@ fn iterate_path_mut<'a, F>(
                 iterate_path_mut(schema, parent, &path[1..], data, f);
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter_mut().enumerate() {
-                    parent.push(PathElement::Index(i));
+                    parent.push(BorrowedPathElement::Index(i));
                     iterate_path_mut(schema, parent, path, value, f);
                     parent.pop();
                 }
@@ -589,14 +589,14 @@ impl<'a> From<BorrowedPathElement<'a>> for PathElement {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default, Hash)]
-pub(crate) struct BorrowedPath<'a>(pub Vec<BorrowedPathElement<'a>>);
+pub(crate) struct BorrowedPath<'a>(pub(crate) Vec<BorrowedPathElement<'a>>);
 
 impl<'a> BorrowedPath<'a> {
-    pub fn push(&mut self, element: BorrowedPathElement<'a>) {
+    pub(crate) fn push(&mut self, element: BorrowedPathElement<'a>) {
         self.0.push(element)
     }
 
-    pub fn pop(&mut self) -> Option<BorrowedPathElement<'a>> {
+    pub(crate) fn pop(&mut self) -> Option<BorrowedPathElement<'a>> {
         self.0.pop()
     }
 }
