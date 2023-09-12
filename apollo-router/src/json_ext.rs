@@ -602,14 +602,8 @@ impl<'a> BorrowedPath<'a> {
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum BorrowedPathElement<'a> {
-    /// A path element that given an array will flatmap the content.
-    Flatten,
-
     /// An index path element.
     Index(usize),
-
-    /// A fragment application
-    Fragment(&'a str),
 
     /// A key path element.
     Key(&'a str),

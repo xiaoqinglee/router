@@ -35,7 +35,6 @@ use crate::graphql::Response;
 use crate::json_ext::BorrowedPathElement;
 use crate::json_ext::Object;
 use crate::json_ext::Path;
-use crate::json_ext::PathElement;
 use crate::json_ext::ValueExt;
 use crate::plugins::subscription::Subscription;
 use crate::plugins::subscription::SubscriptionConfig;

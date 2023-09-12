@@ -3,7 +3,6 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use indexmap::IndexSet;
-use json_ext::PathElement;
 use serde::Deserialize;
 use serde::Serialize;
 use tower::ServiceExt;
