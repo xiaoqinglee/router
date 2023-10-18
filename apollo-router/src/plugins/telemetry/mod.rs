@@ -37,6 +37,7 @@ use opentelemetry::trace::TraceFlags;
 use opentelemetry::trace::TraceState;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::KeyValue;
+use opentelemetry_api::global::shutdown_tracer_provider;
 use parking_lot::Mutex;
 use rand::Rng;
 use router_bridge::planner::UsageReporting;
@@ -569,11 +570,18 @@ impl Telemetry {
             );
             hot_tracer.reload(tracer);
 
-            let last_provider = opentelemetry::global::set_tracer_provider(tracer_provider);
+            shutdown_tracer_provider();
+            opentelemetry::global::set_tracer_provider(tracer_provider);
             // To ensure we don't hang tracing providers are dropped in a blocking task.
             // https://github.com/open-telemetry/opentelemetry-rust/issues/868#issuecomment-1250387989
             // We don't have to worry about timeouts as every exporter is batched, which has a timeout on it already.
-            tokio::task::spawn_blocking(move || drop(last_provider));
+            /*
+            tokio::task::spawn_blocking(move || {
+                shutdown_tracer_provider();
+                ::tracing::info!("we are dropping last_provider: {last_provider:?}");
+                drop(last_provider)
+            });
+            */
 
             opentelemetry::global::set_text_map_propagator(Self::create_propagator(&self.config));
         }
