@@ -260,6 +260,7 @@ tracing-serde = "0.1.3"
 time = { version = "0.3.30", features = ["serde"] }
 similar = { version = "2.3.0", features = ["inline"] }
 console = "0.15.7"
+pprof = { version = "0.13.0", features = ["flamegraph", "protobuf", "prost", "_protobuf", "prost-codec"] }
 
 [target.'cfg(macos)'.dependencies]
 uname = "0.1.1"

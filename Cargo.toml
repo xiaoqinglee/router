@@ -41,3 +41,6 @@ incremental = false
 [profile.release-dhat]
 inherits = "release"
 debug = 1
+
+[profile.release]
+debug = true

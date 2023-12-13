@@ -4,6 +4,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fmt::Debug;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -20,6 +21,7 @@ use clap::Subcommand;
 use directories::ProjectDirs;
 #[cfg(any(feature = "dhat-heap", feature = "dhat-ad-hoc"))]
 use once_cell::sync::OnceCell;
+use prost::Message;
 use regex::Captures;
 use regex::Regex;
 use url::ParseError;
@@ -438,6 +440,12 @@ impl Executable {
             return Ok(());
         }
 
+        let guard = pprof::ProfilerGuardBuilder::default()
+            .frequency(2000)
+            .blocklist(&["libc", "libgcc", "pthread", "vdso", "futures_util"])
+            .build()
+            .unwrap();
+
         let result = match opt.command.as_ref() {
             Some(Commands::Config(ConfigSubcommandArgs {
                 command: ConfigSubcommand::Schema,
@@ -467,6 +475,20 @@ impl Executable {
                 Ok(())
             }
             None => Self::inner_start(shutdown, schema, config, license, opt).await,
+        };
+
+        if let Ok(report) = guard.report().build() {
+            let file = std::fs::File::create("flamegraph.svg").unwrap();
+            report.flamegraph(file).unwrap();
+
+            let mut file = std::fs::File::create("profile.pb").unwrap();
+            let profile = report.pprof().unwrap();
+
+            let mut content = Vec::new();
+            profile.encode(&mut content).unwrap();
+            file.write_all(&content).unwrap();
+
+            //println!("report: {}", &report);
         };
 
         // We should be good to shutdown OpenTelemetry now as the router should have finished everything.
