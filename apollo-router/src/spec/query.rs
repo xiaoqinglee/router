@@ -789,16 +789,6 @@ impl Query {
                     }
 
                     if let Some(fragment) = self.fragments.get(name) {
-                        if let Some(typename_alias) = &fragment.aliased_typename {
-                            input.insert(
-                                TYPENAME,
-                                input
-                                    .get(typename_alias.as_str())
-                                    .and_then(|val| val.as_str())
-                                    .into(),
-                            );
-                        }
-
                         println!(
                             "fragment spread: current_type = {}, type_condition={}",
                             current_type.inner_named_type().as_str(),
