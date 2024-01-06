@@ -542,6 +542,7 @@ impl Service<QueryPlannerRequest> for BridgeQueryPlanner {
                     None
                 }
             };
+            tracing::info!("plan_options: {:?}", &plan_options);
 
             let res = this
                 .get(
