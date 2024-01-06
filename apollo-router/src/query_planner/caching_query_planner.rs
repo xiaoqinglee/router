@@ -102,7 +102,7 @@ where
                 query: key.query,
                 operation: key.operation,
                 metadata: key.metadata,
-                options: key.options,
+                plan_options: key.plan_options,
             })
             .collect()
     }
@@ -153,7 +153,7 @@ where
                     operation: None,
                     metadata: CacheKeyMetadata::default(),
                     // TODO: probably wrong
-                    options: None,
+                    plan_options: None,
                 });
             }
         }
@@ -165,7 +165,7 @@ where
             mut query,
             operation,
             metadata,
-            options,
+            plan_options,
         } in all_cache_keys
         {
             let caching_key = CachingQueryKey {
@@ -173,7 +173,7 @@ where
                 query: query.clone(),
                 operation: operation.clone(),
                 metadata,
-                options,
+                plan_options,
             };
             let context = Context::new();
 
@@ -291,7 +291,23 @@ where
             AuthorizationPlugin::update_cache_key(&request.context);
         }
 
-        let options = request.context.get::<&str, PlanOptions>(OVERRIDE_KEY).unwrap_or(None);
+        let plan_options = if let Ok(Some(override_labels)) =
+            request.context.get::<&str, Vec<String>>(OVERRIDE_KEY)
+        {
+            if override_labels.len() == 0 {
+                None
+            } else {
+                Some(PlanOptions {
+                    override_labels: Some(override_labels.clone()),
+                })
+            }
+        } else {
+            None
+        };
+        tracing::info!(
+            "CachingQueryPlanner.plan: plan_options: {:?}",
+            &plan_options
+        );
 
         let caching_key = CachingQueryKey {
             schema_id,
@@ -304,8 +320,9 @@ where
                 .get::<CacheKeyMetadata>()
                 .cloned()
                 .unwrap_or_default(),
-            options,
+            plan_options,
         };
+        tracing::info!("CachingQueryPlanner.plan: caching_key: {:?}", &caching_key);
 
         let context = request.context.clone();
         let entry = self.cache.get(&caching_key).await;
@@ -461,7 +478,7 @@ pub(crate) struct CachingQueryKey {
     pub(crate) query: String,
     pub(crate) operation: Option<String>,
     pub(crate) metadata: CacheKeyMetadata,
-    pub(crate) options: Option<PlanOptions>,
+    pub(crate) plan_options: Option<PlanOptions>,
 }
 
 impl std::fmt::Display for CachingQueryKey {
@@ -479,8 +496,10 @@ impl std::fmt::Display for CachingQueryKey {
         let metadata = hex::encode(hasher.finalize());
 
         let mut hasher = Sha256::new();
-        hasher.update(&serde_json::to_vec(&self.options).expect("serialization should not fail"));
-        let options = hex::encode(hasher.finalize());
+        hasher.update(
+            &serde_json::to_vec(&self.plan_options).expect("serialization should not fail"),
+        );
+        let plan_options = hex::encode(hasher.finalize());
 
         write!(
             f,
@@ -489,7 +508,7 @@ impl std::fmt::Display for CachingQueryKey {
             query,
             operation,
             metadata,
-            options,
+            plan_options,
         )
     }
 }
@@ -499,7 +518,7 @@ pub(crate) struct WarmUpCachingQueryKey {
     pub(crate) query: String,
     pub(crate) operation: Option<String>,
     pub(crate) metadata: CacheKeyMetadata,
-    pub(crate) options: Option<PlanOptions>,
+    pub(crate) plan_options: Option<PlanOptions>,
 }
 
 #[cfg(test)]
