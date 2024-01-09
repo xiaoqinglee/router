@@ -533,19 +533,10 @@ impl Service<QueryPlannerRequest> for BridgeQueryPlanner {
                 }
             }
 
-            let plan_options = {
-                if let Ok(Some(override_labels)) = context.get::<&str, Vec<String>>(OVERRIDE_KEY) {
-                    if override_labels.len() == 0 {
-                        None
-                    } else {
-                        Some(PlanOptions {
-                            override_labels: Some(override_labels.clone()),
-                        })
-                    }
-                } else {
-                    None
-                }
+            let plan_options = PlanOptions {
+                override_labels: context.get(OVERRIDE_KEY).unwrap_or_default(),
             };
+
             tracing::info!("BridgeQueryPlanner: plan_options: {:?}", &plan_options);
 
             let res = this
@@ -555,7 +546,7 @@ impl Service<QueryPlannerRequest> for BridgeQueryPlanner {
                         filtered_query: doc.ast.to_string(),
                         operation_name: operation_name.to_owned(),
                         metadata,
-                        plan_options,
+                        plan_options: Some(plan_options),
                     },
                     doc,
                 )

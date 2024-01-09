@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -27,10 +28,10 @@ pub(crate) const OVERRIDE_KEY: &str = "apollo_override::override_labels";
 pub(crate) struct Conf {}
 
 pub(crate) struct ProgressiveOverridePlugin {
-    label_to_percentage_map: HashMap<String, f64>,
+    label_to_percentage_map: HashMap<Cow<'static, str>, f64>,
 }
 
-fn collect_static_percentages_from_schema(schema: Schema) -> HashMap<String, f64> {
+fn collect_static_percentages_from_schema(schema: Schema) -> HashMap<Cow<'static, str>, f64> {
     let mut static_percentages = HashMap::new();
     for extended_type in schema.types.values() {
         if let ExtendedType::Object(object_type) = extended_type {
@@ -47,7 +48,8 @@ fn collect_static_percentages_from_schema(schema: Schema) -> HashMap<String, f64
                         .and_then(|s| s.strip_suffix(")"))
                     {
                         if let Ok(parsed_percent) = percent_as_str.parse::<f64>() {
-                            static_percentages.insert(label_arg.to_owned(), parsed_percent);
+                            static_percentages
+                                .insert(Cow::from(label_arg.to_owned()), parsed_percent);
                         }
                     }
                 }
@@ -78,12 +80,13 @@ impl Plugin for ProgressiveOverridePlugin {
             let label_to_percentage_map = self.label_to_percentage_map.clone();
             ServiceBuilder::new()
                 .map_request(move |request: supergraph::Request| {
-                    let mut override_labels = HashSet::new();
-                    for (label, percentage) in &label_to_percentage_map {
-                        if rand::random::<f64>() * 100.0 < *percentage {
-                            override_labels.insert(label.to_owned());
-                        }
-                    }
+                    let override_labels = label_to_percentage_map
+                        .iter()
+                        .filter_map(|(label, percentage)| {
+                            (rand::random::<f64>() * 100.0 < *percentage).then(|| label.clone())
+                        })
+                        .collect::<HashSet<Cow<'static, str>>>();
+
                     // TODO: handle the Err case here
                     tracing::info!(
                         "ProgressiveOverridePlugin: computed override_labels: {:?}",
