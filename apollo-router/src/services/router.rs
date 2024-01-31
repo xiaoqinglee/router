@@ -30,8 +30,22 @@ use crate::Context;
 pub type BoxService = tower::util::BoxService<Request, Response, BoxError>;
 pub type BoxCloneService = tower::util::BoxCloneService<Request, Response, BoxError>;
 pub type ServiceResult = Result<Response, BoxError>;
-pub type Body = hyper::Body;
+
+#[derive(Debug)]
+pub struct Body(pub hyper::Body);
 pub type Error = hyper::Error;
+
+impl From<hyper::Body> for Body {
+    fn from(value: hyper::Body) -> Self {
+        Body(value)
+    }
+}
+
+impl Body {
+    pub fn new(body: hyper::Body) -> Self {
+        Body(body)
+    }
+}
 
 pub(crate) mod service;
 #[cfg(test)]
@@ -108,7 +122,7 @@ impl Request {
         let mut router_request = http::Request::builder()
             .uri(uri.unwrap_or_else(|| http::Uri::from_static("http://example.com/")))
             .method(method.unwrap_or(Method::GET))
-            .body(body.unwrap_or_else(Body::empty))?;
+            .body(body.unwrap_or_else(|| hyper::Body::empty().into()))?;
         *router_request.headers_mut() = header_map(headers)?;
         Ok(Self {
             router_request,
@@ -193,7 +207,7 @@ impl From<http::Response<Body>> for Response {
 #[buildstructor::buildstructor]
 impl Response {
     pub async fn next_response(&mut self) -> Option<Result<Bytes, Error>> {
-        self.response.body_mut().next().await
+        self.response.body_mut().0.next().await
     }
 
     pub fn map<F>(self, f: F) -> Response
@@ -245,7 +259,7 @@ impl Response {
 
         // let response = builder.body(once(ready(res)).boxed())?;
 
-        let response = builder.body(hyper::Body::from(serde_json::to_vec(&res)?))?;
+        let response = builder.body(hyper::Body::from(serde_json::to_vec(&res)?).into())?;
 
         Ok(Self { response, context })
     }

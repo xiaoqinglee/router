@@ -156,11 +156,11 @@ where
                     tracing::trace!(?health, request = ?req.router_request, "health check");
                     async move {
                         Ok(router::Response {
-                            response: http::Response::builder()
-                                .status(status_code)
-                                .body::<hyper::Body>(
+                            response: http::Response::builder().status(status_code).body(
+                                router::Body(
                                     serde_json::to_vec(&health).map_err(BoxError::from)?.into(),
-                                )?,
+                                ),
+                            )?,
                             context: req.context,
                         })
                     }
@@ -557,6 +557,8 @@ async fn handle_graphql(
     let session_count = ACTIVE_SESSION_COUNT.fetch_add(1, Ordering::Acquire) + 1;
     tracing::info!(value.apollo_router_session_count_active = session_count,);
 
+    let (parts, body) = http_request.into_parts();
+    let http_request = Request::from_parts(parts, router::Body(body));
     let request: router::Request = http_request.into();
     let context = request.context.clone();
     let accept_encoding = request
@@ -605,13 +607,13 @@ async fn handle_graphql(
                 .and_then(|value| value.to_str().ok())
                 .and_then(|v| Compressor::new(v.split(',').map(|s| s.trim())));
             let body = match opt_compressor {
-                None => body,
+                None => body.0,
                 Some(compressor) => {
                     parts.headers.insert(
                         CONTENT_ENCODING,
                         HeaderValue::from_static(compressor.content_encoding()),
                     );
-                    Body::wrap_stream(compressor.process(body))
+                    Body::wrap_stream(compressor.process(body.0))
                 }
             };
 
