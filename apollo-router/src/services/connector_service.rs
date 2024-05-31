@@ -69,7 +69,7 @@ impl tower::Service<ConnectRequest> for ConnectorService {
             .unwrap()
             .clone();
         Box::pin(async move {
-            Ok(process_source_node(sf, fetch_node, connectors, data, current_dir, context).await)
+            process_source_node(sf, fetch_node, connectors, data, current_dir, context).await
         })
     }
 }
@@ -81,17 +81,20 @@ pub(crate) async fn process_source_node(
     data: Value,
     _paths: Path,
     context: Context,
-) -> (Value, Vec<Error>) {
+) -> Result<(Value, Vec<Error>), BoxError> {
     let connector = if let Some(connector) =
         connectors.get(&SourceId::Connect(source_node.source_id.clone()))
     {
         connector
     } else {
-        return (Default::default(), Default::default());
+        return Err(BoxError::from(format!(
+            "couldn't find connector for source_id {}",
+            source_node.source_id
+        )));
     };
 
     // TODO: remove unwraps
-    let requests = create_requests(connector, &data, context).unwrap();
+    let requests = create_requests(connector, &data, context).map_err(BoxError::from)?;
 
     let responses = make_requests(
         http_client,
@@ -99,9 +102,9 @@ pub(crate) async fn process_source_node(
         requests,
     )
     .await
-    .unwrap();
+    .map_err(BoxError::from)?;
 
-    process_responses(responses, source_node).await
+    Ok(process_responses(responses, source_node).await)
 }
 
 fn create_requests(
@@ -289,7 +292,7 @@ mod soure_node_tests {
             paths,
             Default::default(),
         )
-        .await;
+        .await.unwrap();
 
         assert_eq!(expected, actual);
     }

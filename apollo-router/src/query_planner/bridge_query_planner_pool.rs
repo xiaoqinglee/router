@@ -4,9 +4,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use apollo_compiler::validation::Valid;
+use apollo_federation::sources::source::SourceId;
 use async_channel::bounded;
 use async_channel::Sender;
 use futures::future::BoxFuture;
+use indexmap::IndexMap;
 use opentelemetry::metrics::MeterProvider;
 use router_bridge::planner::Planner;
 use tokio::sync::oneshot;
@@ -35,6 +37,7 @@ pub(crate) struct BridgeQueryPlannerPool {
     )>,
     schema: Arc<Schema>,
     subgraph_schemas: Arc<HashMap<String, Arc<Valid<apollo_compiler::Schema>>>>,
+    connectors: Arc<IndexMap<SourceId, apollo_federation::sources::connect::Connector>>,
     _pool_size_gauge: opentelemetry::metrics::ObservableGauge<u64>,
 }
 
@@ -98,6 +101,15 @@ impl BridgeQueryPlannerPool {
             })?
             .subgraph_schemas();
 
+        let connectors = bridge_query_planners
+            .first()
+            .ok_or_else(|| {
+                ServiceBuildError::QueryPlannerError(QueryPlannerError::PoolProcessing(
+                    "There should be at least 1 Query Planner service in pool".to_string(),
+                ))
+            })?
+            .connectors();
+
         let planners = bridge_query_planners
             .iter()
             .map(|p| p.planner().clone())
@@ -144,11 +156,18 @@ impl BridgeQueryPlannerPool {
             schema,
             subgraph_schemas,
             _pool_size_gauge: pool_size_gauge,
+            connectors,
         })
     }
 
     pub(crate) fn planners(&self) -> Vec<Arc<Planner<QueryPlanResult>>> {
         self.planners.clone()
+    }
+
+    pub(crate) fn connectors(
+        &self,
+    ) -> Arc<IndexMap<SourceId, apollo_federation::sources::connect::Connector>> {
+        self.connectors.clone()
     }
 
     pub(crate) fn schema(&self) -> Arc<Schema> {

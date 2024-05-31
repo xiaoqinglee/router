@@ -12,7 +12,9 @@ use apollo_compiler::ExecutableDocument;
 use apollo_federation::error::FederationError;
 use apollo_federation::query_plan::query_planner::QueryPlanner;
 use apollo_federation::source_aware::query_plan::QueryPlanner as SourceAwareQueryPlanner;
+use apollo_federation::sources::source::SourceId;
 use futures::future::BoxFuture;
+use indexmap::IndexMap;
 use opentelemetry_api::metrics::MeterProvider as _;
 use opentelemetry_api::metrics::ObservableGauge;
 use opentelemetry_api::KeyValue;
@@ -50,6 +52,7 @@ use crate::plugins::authorization::AuthorizationPlugin;
 use crate::plugins::authorization::CacheKeyMetadata;
 use crate::plugins::authorization::UnauthorizedPaths;
 use crate::plugins::connectors::connector_subgraph_names;
+use crate::plugins::connectors::convert_connectors;
 use crate::plugins::connectors::Connector;
 use crate::plugins::progressive_override::LABELS_TO_OVERRIDE_KEY;
 use crate::query_planner::fetch::QueryHash;
@@ -78,7 +81,8 @@ pub(crate) struct BridgeQueryPlanner {
     configuration: Arc<Configuration>,
     enable_authorization_directives: bool,
     subgraph_planners: Arc<HashMap<Arc<String>, Arc<Planner<QueryPlanResult>>>>,
-    connectors: Option<Arc<HashMap<Arc<String>, Connector>>>,
+    pp_connectors: Option<Arc<HashMap<Arc<String>, Connector>>>,
+    connectors: Arc<IndexMap<SourceId, apollo_federation::sources::connect::Connector>>,
     _federation_instrument: ObservableGauge<u64>,
 }
 
@@ -602,7 +606,8 @@ impl BridgeQueryPlanner {
             configuration,
             _federation_instrument: federation_instrument,
             subgraph_planners: Arc::new(subgraph_planners),
-            connectors,
+            pp_connectors: connectors.clone(),
+            connectors: Arc::new(convert_connectors(connectors.unwrap_or_default())),
         })
     }
 
@@ -610,6 +615,12 @@ impl BridgeQueryPlanner {
         self.planner
             .js_for_api_schema_and_introspection_and_operation_signature()
             .clone()
+    }
+
+    pub(crate) fn connectors(
+        &self,
+    ) -> Arc<IndexMap<SourceId, apollo_federation::sources::connect::Connector>> {
+        self.connectors.clone()
     }
 
     pub(crate) fn schema(&self) -> Arc<Schema> {
@@ -702,7 +713,7 @@ impl BridgeQueryPlanner {
             node.generate_connector_plan(
                 self.schema.as_ref(),
                 &self.subgraph_planners,
-                &self.connectors.clone().unwrap_or_default(),
+                &self.pp_connectors.clone().unwrap_or_default(),
             )
             .await?;
 
@@ -863,8 +874,7 @@ impl BridgeQueryPlanner {
                         formatted_query_plan,
                         query: Arc::new(selections),
                     }),
-                    // TODO[igni]
-                    connectors: Default::default(),
+                    connectors: self.connectors.clone(), // TODO: should be removed eventually
                 })
             }
             #[cfg_attr(feature = "failfast", allow(unused_variables))]

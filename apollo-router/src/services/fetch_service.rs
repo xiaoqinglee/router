@@ -180,7 +180,7 @@ impl tower::Service<FetchRequest> for FetchService {
             )) = fetch_node.source_node.as_deref()
             {
                 // TODO: return eventually
-                let _ = connector_service_factory
+                let res = connector_service_factory
                     .create()
                     .oneshot(
                         ConnectRequest::builder()
@@ -192,6 +192,7 @@ impl tower::Service<FetchRequest> for FetchService {
                             .build(),
                     )
                     .await;
+            dbg!(&connect_node, res);
             }
 
             Ok(FetchNode::subgraph_fetch(

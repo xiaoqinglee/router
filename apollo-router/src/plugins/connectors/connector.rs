@@ -4,6 +4,10 @@ use std::sync::Arc;
 
 use apollo_compiler::ast::Selection as GraphQLSelection;
 use apollo_compiler::schema::Name;
+use apollo_compiler::NodeStr;
+use apollo_federation::sources::connect::HTTPMethod;
+use apollo_federation::sources::connect::JSONSelection;
+use http::Method;
 
 use super::directives::KeyTypeMap;
 use super::directives::SourceAPI;
@@ -67,6 +71,44 @@ impl ConnectorTransport {
         match self {
             Self::HttpJson(transport) => transport.debug_name().clone(),
         }
+    }
+
+    pub(super) fn selection(&self) -> JSONSelection {
+        match self {
+            Self::HttpJson(transport) => transport.response_mapper.clone(),
+        }
+    }
+}
+
+impl Into<apollo_federation::sources::connect::Transport> for ConnectorTransport {
+    fn into(self) -> apollo_federation::sources::connect::Transport {
+        let  Self::HttpJson(HttpJsonTransport {
+            base_uri,
+            method,
+            headers,
+            source_api_name,
+            path_template,
+            response_mapper,
+            body_mapper,
+            .. // reserved_headers,
+        }) = self;
+        let method = match method {
+            Method::GET => HTTPMethod::Get,
+            Method::POST => HTTPMethod::Post,
+            Method::PATCH => HTTPMethod::Patch,
+            Method::PUT => HTTPMethod::Put,
+            Method::DELETE => HTTPMethod::Delete,
+            _ => unimplemented!(),
+        };
+        apollo_federation::sources::connect::Transport::HttpJson(
+            apollo_federation::sources::connect::HttpJsonTransport {
+                base_url: NodeStr::new(base_uri.as_str()),
+                path_template,
+                method,
+                headers: Default::default(), // TODO
+                body: body_mapper,
+            },
+        )
     }
 }
 

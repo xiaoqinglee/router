@@ -576,7 +576,10 @@ async fn subscription_task(
                                         execution_service_factory.subgraph_schemas.clone(),
                                         Arc::new(http_service_factory),
                                         subscription_plugin_conf,
-                                        Default::default(),
+                                        // todo: this is wrong, supergraph_service should be responsible
+                                        // for dealing with that.
+                                        // however since the plan didnt change, connectors remain the same
+                                        connectors.clone(),
                                     )),
                                  ),
 
@@ -824,7 +827,7 @@ impl PluggableSupergraphServiceBuilder {
         let schema = self.planner.schema();
         let subgraph_schemas = self.planner.subgraph_schemas();
         let query_planner_service = CachingQueryPlanner::new(
-            self.planner,
+            self.planner.clone(),
             schema.clone(),
             subgraph_schemas.clone(),
             &configuration,
@@ -864,7 +867,7 @@ impl PluggableSupergraphServiceBuilder {
                 subgraph_schemas,
                 Arc::new(self.http_service_factory),
                 subscription_plugin_conf,
-                Default::default(),
+                self.planner.connectors(),
             )),
         ));
 

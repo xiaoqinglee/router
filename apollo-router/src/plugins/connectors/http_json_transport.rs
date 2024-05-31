@@ -64,6 +64,7 @@ static RESERVED_HEADERS: [HeaderName; 14] = [
 // temporary while we're refactoring the modules
 #[allow(clippy::module_inception)]
 pub(crate) mod http_json_transport {
+    use apollo_federation::sources::connect::ApplyTo;
     use apollo_federation::sources::connect::HttpJsonTransport;
     use url::Url;
 
@@ -76,21 +77,28 @@ pub(crate) mod http_json_transport {
         transport: &HttpJsonTransport,
         inputs: Value,
     ) -> Result<http::Request<hyper::Body>, HttpJsonTransportError> {
-        let body = hyper::Body::empty();
+        dbg!(&inputs);
+        let body = if let Some(ref sel) = transport.body {
+            let (body, _) = sel.apply_to(&inputs);
+            hyper::Body::from(
+                serde_json::to_vec(&body).map_err(HttpJsonTransportError::BodySerialization)?,
+            )
+        } else {
+            hyper::Body::empty()
+        };
 
         // TODO: why is apollo_federation HTTPMethod Ucfirst?
         let method = transport.method.to_string().to_uppercase();
         let request = http::Request::builder()
             .method(method.as_bytes())
             .uri(
-                make_uri(transport, &inputs)
+                dbg!(make_uri(transport, &inputs)
                     .map_err(HttpJsonTransportError::ConnectorDirectiveError)?
-                    .as_str(),
+                    .as_str()),
             )
             .header("content-type", "application/json")
             .body(body)
             .map_err(HttpJsonTransportError::InvalidNewRequest)?;
-
         Ok(request)
     }
 
