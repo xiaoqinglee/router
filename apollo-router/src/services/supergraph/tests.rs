@@ -1696,9 +1696,11 @@ async fn reconstruct_deferred_query_under_interface() {
 
 fn subscription_context() -> Context {
     let context = Context::new();
-    context.extensions().lock().insert(ClientRequestAccepts {
-        multipart_subscription: true,
-        ..Default::default()
+    context.extensions().with_lock(|mut lock| {
+        lock.insert(ClientRequestAccepts {
+            multipart_subscription: true,
+            ..Default::default()
+        })
     });
 
     context
@@ -1706,9 +1708,11 @@ fn subscription_context() -> Context {
 
 fn defer_context() -> Context {
     let context = Context::new();
-    context.extensions().lock().insert(ClientRequestAccepts {
-        multipart_defer: true,
-        ..Default::default()
+    context.extensions().with_lock(|mut lock| {
+        lock.insert(ClientRequestAccepts {
+            multipart_defer: true,
+            ..Default::default()
+        })
     });
 
     context

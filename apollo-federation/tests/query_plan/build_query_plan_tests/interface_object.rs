@@ -41,7 +41,8 @@ const SUBGRAPH2: &str = r#"
 "#;
 
 #[test]
-#[should_panic(expected = "Subgraph unexpectedly does not use federation spec")]
+#[should_panic(expected = "snapshot assertion")]
+// TODO: investigate this failure
 fn can_use_a_key_on_an_interface_object_type() {
     let planner = planner!(
         S1: SUBGRAPH1,
@@ -92,7 +93,10 @@ fn can_use_a_key_on_an_interface_object_type() {
 }
 
 #[test]
-#[should_panic(expected = "Subgraph unexpectedly does not use federation spec")]
+#[should_panic(
+    expected = r#"Cannot add selection of field "I.__typename" to selection set of parent type "I" that is potentially an interface object type at runtime"#
+)]
+// TODO: investigate this failure
 fn can_use_a_key_on_an_interface_object_from_an_interface_object_type() {
     let planner = planner!(
         S1: SUBGRAPH1,
@@ -144,9 +148,6 @@ fn can_use_a_key_on_an_interface_object_from_an_interface_object_type() {
 }
 
 #[test]
-#[should_panic(
-    expected = "Cannot add selection of field \"I.y\" to selection set of parent type \"I\""
-)]
 fn only_uses_an_interface_object_if_it_can() {
     let planner = planner!(
         S1: SUBGRAPH1,
@@ -177,7 +178,9 @@ fn only_uses_an_interface_object_if_it_can() {
 }
 
 #[test]
-#[should_panic(expected = "Interface type referencers unexpectedly missing type")]
+#[should_panic(
+    expected = "Cannot add selection of field \"I.__typename\" to selection set of parent type \"I\" that is potentially an interface object type at runtime"
+)]
 fn does_not_rely_on_an_interface_object_directly_for_typename() {
     let planner = planner!(
         S1: SUBGRAPH1,
@@ -228,7 +231,10 @@ fn does_not_rely_on_an_interface_object_directly_for_typename() {
 }
 
 #[test]
-#[should_panic(expected = "Subgraph unexpectedly does not use federation spec")]
+#[should_panic(
+    expected = r#"Cannot add selection of field "I.__typename" to selection set of parent type "I" that is potentially an interface object type at runtime"#
+)]
+// TODO: investigate this failure
 fn does_not_rely_on_an_interface_object_directly_if_a_specific_implementation_is_requested() {
     let planner = planner!(
         S1: SUBGRAPH1,
@@ -298,9 +304,7 @@ fn does_not_rely_on_an_interface_object_directly_if_a_specific_implementation_is
 }
 
 #[test]
-#[should_panic(
-    expected = "Cannot add selection of field \"I.y\" to selection set of parent type \"I\""
-)]
+#[should_panic(expected = "snapshot assertion")]
 fn can_use_a_key_on_an_interface_object_type_even_for_a_concrete_implementation() {
     let planner = planner!(
         S1: SUBGRAPH1,
@@ -373,7 +377,10 @@ fn can_use_a_key_on_an_interface_object_type_even_for_a_concrete_implementation(
 }
 
 #[test]
-#[should_panic(expected = "Subgraph unexpectedly does not use federation spec")]
+#[should_panic(
+    expected = r#"Cannot add selection of field "I.__typename" to selection set of parent type "I" that is potentially an interface object type at runtime"#
+)]
+// TODO: investigate this failure
 fn handles_query_of_an_interface_field_for_a_specific_implementation_when_query_starts_with_interface_object(
 ) {
     let planner = planner!(
@@ -429,7 +436,10 @@ fn handles_query_of_an_interface_field_for_a_specific_implementation_when_query_
 }
 
 #[test]
-#[should_panic(expected = "Subgraph unexpectedly does not use federation spec")]
+#[should_panic(
+    expected = r#"Cannot add selection of field "I.__typename" to selection set of parent type "I" that is potentially an interface object type at runtime"#
+)]
+// TODO: investigate this failure
 fn it_avoids_buffering_interface_object_results_that_may_have_to_be_filtered_with_lists() {
     let planner = planner!(
         S1: r#"
@@ -522,9 +532,7 @@ fn it_avoids_buffering_interface_object_results_that_may_have_to_be_filtered_wit
 }
 
 #[test]
-#[should_panic(
-    expected = "Cannot add selection of field \"I.x\" to selection set of parent type \"I\""
-)]
+#[should_panic(expected = "snapshot assertion")]
 fn it_handles_requires_on_concrete_type_of_field_provided_by_interface_object() {
     let planner = planner!(
         S1: r#"
@@ -619,7 +627,8 @@ fn it_handles_requires_on_concrete_type_of_field_provided_by_interface_object() 
 }
 
 #[test]
-#[should_panic(expected = "Subgraph unexpectedly does not use federation spec")]
+#[should_panic(expected = "snapshot assertion")]
+// TODO: investigate this failure
 fn it_handles_interface_object_in_nested_entity() {
     let planner = planner!(
         S1: r#"
@@ -721,7 +730,8 @@ fn it_handles_interface_object_in_nested_entity() {
 }
 
 #[test]
-#[should_panic(expected = "Subgraph unexpectedly does not use federation spec")]
+#[should_panic(expected = "snapshot assertion")]
+// TODO: investigate this failure
 fn it_handles_interface_object_input_rewrites_when_cloning_dependency_graph() {
     let planner = planner!(
         S1: r#"

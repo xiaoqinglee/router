@@ -29,6 +29,8 @@ pub(crate) struct Schema {
     subgraphs: HashMap<String, Uri>,
     pub(crate) implementers_map: HashMap<ast::Name, Implementers>,
     api_schema: Option<ApiSchema>,
+    pub(crate) schema_id: Arc<String>,
+
     #[allow(dead_code)]
     pub(crate) subgraph_definition_and_names: HashMap<String, String>,
 
@@ -146,12 +148,15 @@ impl Schema {
             Supergraph::ApolloCompiler(definitions)
         };
 
+        let schema_id = Arc::new(Schema::schema_id(sdl));
+
         Ok(Schema {
             raw_sdl: Arc::new(sdl.to_owned()),
             supergraph,
             subgraphs,
             implementers_map,
             api_schema: None,
+            schema_id,
             subgraph_definition_and_names,
             source,
         })
@@ -397,6 +402,7 @@ impl std::fmt::Debug for Schema {
             subgraphs,
             implementers_map,
             api_schema: _, // skip
+            schema_id: _,
             ..
         } = self;
         f.debug_struct("Schema")
@@ -459,7 +465,7 @@ mod tests {
             type Baz {
               me: String
             }
-            
+
             union UnionType2 = Foo | Bar
             "#,
             );
