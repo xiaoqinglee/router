@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -40,6 +41,9 @@ use crate::router::ShutdownSource;
 use crate::uplink::Endpoints;
 use crate::uplink::UplinkConfig;
 use crate::LicenseSource;
+
+static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
+static GLOBAL_THREAD_HIGH: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(all(
     feature = "global-allocator",
@@ -370,10 +374,26 @@ pub fn main() -> Result<()> {
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
     {
+        // builder.max_blocking_threads(8192);
         builder.worker_threads(nb);
+        builder.on_thread_start(|| {
+            let prev_count = GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::Relaxed);
+            if prev_count >= GLOBAL_THREAD_HIGH.load(Ordering::Relaxed) {
+                GLOBAL_THREAD_HIGH.store(prev_count + 1, Ordering::Relaxed);
+            }
+        });
+        builder.on_thread_stop(|| {
+            GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::Relaxed);
+        });
     }
     let runtime = builder.build()?;
-    runtime.block_on(Executable::builder().start())
+    let result = runtime.block_on(Executable::builder().start());
+    tracing::info!(
+        "thread count: {}, thread high: {}",
+        GLOBAL_THREAD_COUNT.load(Ordering::Relaxed),
+        GLOBAL_THREAD_HIGH.load(Ordering::Relaxed)
+    );
+    result
 }
 
 /// Entry point into creating a router executable with more customization than [`main`].
