@@ -4,10 +4,9 @@ use apollo_compiler::executable;
 use apollo_compiler::Name;
 use indexmap::IndexSet;
 
-use crate::error::FederationError;
-
 use super::Selection;
 use super::SelectionId;
+use crate::error::FederationError;
 
 pub(crate) trait HasSelectionKey {
     fn key(&self) -> SelectionKey;
@@ -493,6 +492,7 @@ mod tests {
     use apollo_compiler::name;
 
     use crate::operation::Field;
+    use crate::operation::FieldData;
     use crate::schema::position::ObjectTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
 
@@ -602,13 +602,13 @@ mod tests {
         );
 
         let selections = selection_map.values().collect::<Vec<_>>();
+        let mut a = FieldData::from_position(&schema, q.field(name!("a")).into());
+        a.alias = Some(name!("alias"));
+        let a = Field::new(a);
         assert_eq!(
             selections,
             [
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("a")).into()),
-                    None
-                ),
+                &Selection::from_field(a, None),
                 &Selection::from_field(
                     Field::from_position(&schema, q.field(name!("b")).into()),
                     None
