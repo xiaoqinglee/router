@@ -3123,6 +3123,7 @@ mod tests {
         fn operation_without_empty_branches(operation: &Operation) -> Option<String> {
             operation
                 .selection_set
+                .clone()
                 .without_empty_branches()
                 .unwrap()
                 .map(|s| s.to_string())
@@ -3154,10 +3155,11 @@ mod tests {
                 }
 
                 Some((first, rest)) => {
-                    let result = Arc::make_mut(&mut ss.selections).get_mut(&SelectionKey::Field {
-                        response_name: (*first).clone(),
-                        directives: Default::default(),
-                    });
+                    let result =
+                        Arc::make_mut(&mut ss.selections).get_safe_mut(&SelectionKey::Field {
+                            response_name: (*first).clone(),
+                            directives: Default::default(),
+                        });
                     let Some(mut value) = result else {
                         return Err(FederationError::internal("No matching field found"));
                     };

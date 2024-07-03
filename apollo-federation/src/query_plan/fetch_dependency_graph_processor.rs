@@ -356,8 +356,9 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
             sub_selection: if defer_info.deferred.is_empty() {
                 defer_info
                     .sub_selection
+                    .clone()
                     .without_empty_branches()?
-                    .map(|filtered| filtered.as_ref().try_into())
+                    .map(|filtered| apollo_compiler::executable::SelectionSet::try_from(&filtered))
                     .transpose()?
             } else {
                 None
@@ -375,8 +376,9 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
         Ok(Some(PlanNode::Defer(DeferNode {
             primary: PrimaryDeferBlock {
                 sub_selection: sub_selection
+                    .clone()
                     .without_empty_branches()?
-                    .map(|filtered| filtered.as_ref().try_into())
+                    .map(|filtered| apollo_compiler::executable::SelectionSet::try_from(&filtered))
                     .transpose()?,
                 node: main.map(Box::new),
             },

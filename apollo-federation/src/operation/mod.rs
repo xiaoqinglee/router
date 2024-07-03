@@ -12,7 +12,6 @@
 //! For example, for fields, the data type is [`FieldData`], the element type is
 //! [`Field`], and the selection type is [`FieldSelection`].
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -203,139 +202,13 @@ impl PartialEq for SelectionSet {
 
 impl Eq for SelectionSet {}
 
-mod selection_map_old {
-    use std::sync::Arc;
-
-    use apollo_compiler::executable;
-
-    use crate::operation::field_selection::FieldSelection;
-    use crate::operation::fragment_spread_selection::FragmentSpreadSelection;
-    use crate::operation::inline_fragment_selection::InlineFragmentSelection;
-    use crate::operation::Selection;
-    use crate::operation::SelectionSet;
-    use crate::operation::SiblingTypename;
-
-    /// A mutable reference to a `Selection` value in a `SelectionMap`, which
-    /// also disallows changing key-related data (to maintain the invariant that a value's key is
-    /// the same as it's map entry's key).
-    #[derive(Debug)]
-    pub(crate) enum SelectionValue<'a> {
-        Field(FieldSelectionValue<'a>),
-        FragmentSpread(FragmentSpreadSelectionValue<'a>),
-        InlineFragment(InlineFragmentSelectionValue<'a>),
-    }
-
-    impl<'a> SelectionValue<'a> {
-        pub(crate) fn new(selection: &'a mut Selection) -> Self {
-            match selection {
-                Selection::Field(field_selection) => {
-                    SelectionValue::Field(FieldSelectionValue::new(field_selection))
-                }
-                Selection::FragmentSpread(fragment_spread_selection) => {
-                    SelectionValue::FragmentSpread(FragmentSpreadSelectionValue::new(
-                        fragment_spread_selection,
-                    ))
-                }
-                Selection::InlineFragment(inline_fragment_selection) => {
-                    SelectionValue::InlineFragment(InlineFragmentSelectionValue::new(
-                        inline_fragment_selection,
-                    ))
-                }
-            }
-        }
-
-        pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
-            match self {
-                Self::Field(field) => field.get_directives_mut(),
-                Self::FragmentSpread(spread) => spread.get_directives_mut(),
-                Self::InlineFragment(inline) => inline.get_directives_mut(),
-            }
-        }
-
-        pub(super) fn get_selection_set_mut(&mut self) -> Option<&mut SelectionSet> {
-            match self {
-                Self::Field(field) => field.get_selection_set_mut().as_mut(),
-                Self::FragmentSpread(spread) => Some(spread.get_selection_set_mut()),
-                Self::InlineFragment(inline) => Some(inline.get_selection_set_mut()),
-            }
-        }
-    }
-
-    #[derive(Debug)]
-    pub(crate) struct FieldSelectionValue<'a>(&'a mut Arc<FieldSelection>);
-
-    impl<'a> FieldSelectionValue<'a> {
-        pub(crate) fn new(field_selection: &'a mut Arc<FieldSelection>) -> Self {
-            Self(field_selection)
-        }
-
-        pub(crate) fn get(&self) -> &Arc<FieldSelection> {
-            self.0
-        }
-
-        pub(crate) fn get_sibling_typename_mut(&mut self) -> &mut Option<SiblingTypename> {
-            Arc::make_mut(self.0).field.sibling_typename_mut()
-        }
-
-        pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
-            Arc::make_mut(self.0).field.directives_mut()
-        }
-
-        pub(crate) fn get_selection_set_mut(&mut self) -> &mut Option<SelectionSet> {
-            &mut Arc::make_mut(self.0).selection_set
-        }
-    }
-
-    #[derive(Debug)]
-    pub(crate) struct FragmentSpreadSelectionValue<'a>(&'a mut Arc<FragmentSpreadSelection>);
-
-    impl<'a> FragmentSpreadSelectionValue<'a> {
-        pub(crate) fn new(fragment_spread_selection: &'a mut Arc<FragmentSpreadSelection>) -> Self {
-            Self(fragment_spread_selection)
-        }
-
-        pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
-            Arc::make_mut(self.0).spread.directives_mut()
-        }
-
-        pub(crate) fn get_selection_set_mut(&mut self) -> &mut SelectionSet {
-            &mut Arc::make_mut(self.0).selection_set
-        }
-
-        pub(crate) fn get(&self) -> &Arc<FragmentSpreadSelection> {
-            self.0
-        }
-    }
-
-    #[derive(Debug)]
-    pub(crate) struct InlineFragmentSelectionValue<'a>(&'a mut Arc<InlineFragmentSelection>);
-
-    impl<'a> InlineFragmentSelectionValue<'a> {
-        pub(crate) fn new(inline_fragment_selection: &'a mut Arc<InlineFragmentSelection>) -> Self {
-            Self(inline_fragment_selection)
-        }
-
-        pub(crate) fn get(&self) -> &Arc<InlineFragmentSelection> {
-            self.0
-        }
-
-        pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
-            Arc::make_mut(self.0).inline_fragment.directives_mut()
-        }
-
-        pub(crate) fn get_selection_set_mut(&mut self) -> &mut SelectionSet {
-            &mut Arc::make_mut(self.0).selection_set
-        }
-    }
-}
-
+pub(crate) use selection_map::FieldSelectionValue;
+pub(crate) use selection_map::FragmentSpreadSelectionValue;
 pub(crate) use selection_map::HasSelectionKey;
+pub(crate) use selection_map::InlineFragmentSelectionValue;
 pub(crate) use selection_map::SelectionKey;
 pub(crate) use selection_map::SelectionMap;
-pub(crate) use selection_map_old::FieldSelectionValue;
-pub(crate) use selection_map_old::FragmentSpreadSelectionValue;
-pub(crate) use selection_map_old::InlineFragmentSelectionValue;
-pub(crate) use selection_map_old::SelectionValue;
+pub(crate) use selection_map::SelectionValue;
 
 impl SelectionKey {
     pub(crate) fn is_typename_field(&self) -> bool {
@@ -1627,11 +1500,12 @@ impl SelectionSet {
         }
     }
 
+    /// Split this selection set's top-level fields into one selection set each for each field.
     // TODO: Ideally, this method returns a proper, recursive iterator. As is, there is a lot of
     // overhead due to indirection, both from over allocation and from v-table lookups.
     pub(crate) fn split_top_level_fields(&self) -> Box<dyn Iterator<Item = SelectionSet> + '_> {
-        let parent_type = self.type_position.clone();
-        Box::new(self.selections.values().flat_map(move |sel| {
+        let parent_type = &self.type_position;
+        Box::new(self.selections.values().flat_map(|sel| {
             let digest: Box<dyn Iterator<Item = SelectionSet>> = if sel.is_field() {
                 Box::new(std::iter::once(SelectionSet::from_selection(
                     parent_type.clone(),
@@ -1643,19 +1517,21 @@ impl SelectionSet {
                         Box::new(std::iter::empty());
                     return digest;
                 };
-                Box::new(
-                    sel.selection_set()
-                        .ok()
-                        .flatten()
-                        .iter()
-                        .flat_map(|selection_set| selection_set.split_top_level_fields())
-                        .filter_map(move |set| {
-                            let parent_type = ele.parent_type_position();
-                            Selection::from_element(ele.clone(), Some(set))
-                                .ok()
-                                .map(|sel| SelectionSet::from_selection(parent_type, sel))
-                        }),
-                )
+                if let Some(selection_set) = sel.try_selection_set() {
+                    Box::new(
+                        selection_set
+                            .split_top_level_fields()
+                            .filter_map(move |set| {
+                                let parent_type = ele.parent_type_position();
+                                Selection::from_element(ele.clone(), Some(set))
+                                    .ok()
+                                    .map(|sel| SelectionSet::from_selection(parent_type, sel))
+                            }),
+                    )
+                } else {
+                    // This is a fragment without a selection set
+                    Box::new(std::iter::empty())
+                }
             };
             digest
         }))
@@ -1960,7 +1836,7 @@ impl SelectionSet {
             }
         }
 
-        for (key, self_selection) in target.iter_mut() {
+        for (key, self_selection) in target.iter_safe_mut() {
             match self_selection {
                 SelectionValue::Field(mut self_field_selection) => {
                     if let Some(other_field_selections) = fields.shift_remove(key) {
@@ -2102,7 +1978,7 @@ impl SelectionSet {
         let mut sibling_field_key: Option<SelectionKey> = None;
 
         let mutable_selection_map = Arc::make_mut(&mut self.selections);
-        for (key, entry) in mutable_selection_map.iter_mut() {
+        for (key, entry) in mutable_selection_map.iter_safe_mut() {
             match entry {
                 SelectionValue::Field(mut field_selection) => {
                     if field_selection.get().field.name() == &TYPENAME_FIELD
@@ -2140,11 +2016,11 @@ impl SelectionSet {
             (typename_field_key, sibling_field_key)
         {
             if let (
-                Some((_, Selection::Field(typename_field))),
+                Some(Selection::Field(typename_field)),
                 Some(SelectionValue::Field(mut sibling_field)),
             ) = (
                 mutable_selection_map.remove(&typename_key),
-                mutable_selection_map.get_mut(&sibling_field_key),
+                mutable_selection_map.get_safe_mut(&sibling_field_key),
             ) {
                 // Note that as we tag the element, we also record the alias used if any since that
                 // needs to be preserved.
@@ -2160,8 +2036,8 @@ impl SelectionSet {
         Ok(())
     }
 
-    pub(crate) fn without_empty_branches(&self) -> Result<Option<Cow<'_, Self>>, FederationError> {
-        let filtered = self.filter_recursive_depth_first(&mut |sel| match sel {
+    pub(crate) fn without_empty_branches(mut self) -> Result<Option<Self>, FederationError> {
+        self.filter_recursive_depth_first(&mut |sel| match sel {
             Selection::Field(field) => Ok(if let Some(set) = &field.selection_set {
                 !set.is_empty()
             } else {
@@ -2172,25 +2048,18 @@ impl SelectionSet {
                 Err(FederationError::internal("unexpected fragment spread"))
             }
         })?;
-        Ok(if filtered.selections.is_empty() {
+        Ok(if self.selections.is_empty() {
             None
         } else {
-            Some(filtered)
+            Some(self)
         })
     }
 
-    pub(crate) fn filter_recursive_depth_first(
-        &self,
+    fn filter_recursive_depth_first(
+        &mut self,
         predicate: &mut dyn FnMut(&Selection) -> Result<bool, FederationError>,
-    ) -> Result<Cow<'_, Self>, FederationError> {
-        match self.selections.filter_recursive_depth_first(predicate)? {
-            Cow::Borrowed(_) => Ok(Cow::Borrowed(self)),
-            Cow::Owned(selections) => Ok(Cow::Owned(Self {
-                schema: self.schema.clone(),
-                type_position: self.type_position.clone(),
-                selections: Arc::new(selections),
-            })),
-        }
+    ) -> Result<(), FederationError> {
+        Arc::make_mut(&mut self.selections).filter_recursive_depth_first(predicate)
     }
 
     pub(crate) fn conditions(&self) -> Result<Conditions, FederationError> {
@@ -2544,22 +2413,21 @@ impl SelectionSet {
                 let Some(sub_selection_type) = element.sub_selection_type_position()? else {
                     return Err(FederationError::internal("unexpected error: add_at_path encountered a field that is not of a composite type".to_string()));
                 };
-                let mut selection = Arc::make_mut(&mut self.selections)
-                    .entry(ele.key())
-                    .or_insert(|| {
-                        Selection::from_element(
-                            element,
-                            // We immediately add a selection afterward to make this selection set
-                            // valid.
-                            Some(SelectionSet::empty(self.schema.clone(), sub_selection_type)),
-                        )
-                    })?;
-                match &mut selection {
-                    SelectionValue::Field(field) => match field.get_selection_set_mut() {
+                let selections = Arc::make_mut(&mut self.selections);
+                selections.entry(ele.key()).or_insert(|| {
+                    Selection::from_element(
+                        element,
+                        // We immediately add a selection afterward to make this selection set
+                        // valid.
+                        Some(SelectionSet::empty(self.schema.clone(), sub_selection_type)),
+                    )
+                })?;
+                match selections.get_safe_mut(&ele.key()).unwrap() {
+                    SelectionValue::Field(mut field) => match field.get_selection_set_mut() {
                         Some(sub_selection) => sub_selection.add_at_path(path, selection_set)?,
                         None => return Err(FederationError::internal("add_at_path encountered a field without a subselection which should never happen".to_string())),
                     },
-                    SelectionValue::InlineFragment(fragment) => fragment
+                    SelectionValue::InlineFragment(mut fragment) => fragment
                         .get_selection_set_mut()
                         .add_at_path(path, selection_set)?,
                     SelectionValue::FragmentSpread(_fragment) => {
@@ -2622,7 +2490,7 @@ impl SelectionSet {
 
     /// Removes the @defer directive from all selections without removing that selection.
     fn without_defer(&mut self) {
-        for (_key, mut selection) in Arc::make_mut(&mut self.selections).iter_mut() {
+        for (_key, mut selection) in Arc::make_mut(&mut self.selections).iter_safe_mut() {
             Arc::make_mut(selection.get_directives_mut()).retain(|dir| dir.name != name!("defer"));
             if let Some(set) = selection.get_selection_set_mut() {
                 set.without_defer();

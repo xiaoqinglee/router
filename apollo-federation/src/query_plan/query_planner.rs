@@ -531,7 +531,7 @@ fn compute_root_serial_dependency_graph(
         None
     };
     // We have to serially compute a plan for each top-level selection.
-    let mut split_roots = operation.selection_set.clone().split_top_level_fields();
+    let mut split_roots = operation.selection_set.split_top_level_fields();
     let mut digest = Vec::new();
     let mut starting_fetch_id = 0;
     let selection_set = split_roots

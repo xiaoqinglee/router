@@ -109,6 +109,16 @@ impl SelectionMap {
             .map(|index| &self.selections[index])
     }
 
+    /// Get a reference to a selection that only allows mutations that do not invalidate its key.
+    pub(crate) fn get_safe_mut<'map>(
+        &'map mut self,
+        key: &SelectionKey,
+    ) -> Option<SelectionValue<'map>> {
+        self.keys
+            .get_index_of(key)
+            .map(|index| SelectionValue::new(&mut self.selections[index]))
+    }
+
     pub(crate) fn contains_key(&self, key: &SelectionKey) -> bool {
         self.keys.contains(key)
     }
@@ -162,6 +172,67 @@ impl SelectionMap {
     ) -> impl Iterator<Item = (&'_ SelectionKey, &'_ Selection)> + ExactSizeIterator + DoubleEndedIterator
     {
         self.keys().zip(self.values())
+    }
+
+    /// Iterate over the selections in the map, allowing mutation only to the parts of the
+    /// selection that do not affect the key.
+    pub(crate) fn iter_safe_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&'_ SelectionKey, SelectionValue<'_>)>
+           + ExactSizeIterator
+           + DoubleEndedIterator {
+        self.keys
+            .iter()
+            .zip(self.selections.iter_mut().map(SelectionValue::new))
+    }
+
+    /// Returns the selection set resulting from "recursively" filtering any selection
+    /// that does not match the provided predicate.
+    /// This method calls `predicate` on every selection of the selection set,
+    /// not just top-level ones, and apply a "depth-first" strategy:
+    /// when the predicate is called on a given selection it is guaranteed that
+    /// filtering has happened on all the selections of its sub-selection.
+    pub(super) fn filter_recursive_depth_first(
+        &mut self,
+        predicate: &mut dyn FnMut(&Selection) -> Result<bool, FederationError>,
+    ) -> Result<(), FederationError> {
+        fn recur_sub_selections<'sel>(
+            selection: &'sel mut Selection,
+            predicate: &mut dyn FnMut(&Selection) -> Result<bool, FederationError>,
+        ) -> Result<(), FederationError> {
+            Ok(match selection {
+                Selection::Field(field) => {
+                    let field = Arc::make_mut(field);
+                    if let Some(sub_selections) = &mut field.selection_set {
+                        sub_selections.filter_recursive_depth_first(predicate)?;
+                    }
+                }
+                Selection::InlineFragment(fragment) => {
+                    let fragment = Arc::make_mut(fragment);
+                    fragment
+                        .selection_set
+                        .filter_recursive_depth_first(predicate)?;
+                }
+                Selection::FragmentSpread(_) => {
+                    return Err(FederationError::internal("unexpected fragment spread"))
+                }
+            })
+        }
+
+        let mut index = 0;
+        while index < self.selections.len() {
+            let value = &mut self.selections[index];
+            recur_sub_selections(value, predicate)?;
+            if predicate(value)? {
+                index += 1;
+                continue;
+            }
+
+            self.keys.shift_remove_index(index);
+            self.selections.remove(index);
+        }
+
+        Ok(())
     }
 }
 
@@ -225,7 +296,7 @@ impl<'a> OccupiedEntry<'a> {
         if *old_key != new_key {
             // First insert the new key.
             let (new_index, true) = self.map.keys.insert_full(new_key) else {
-                panic!("new key is not new. the selection map is now in an invalid state.");
+                panic!("key collision. the selection map is now in an invalid state.");
             };
             // Then move it into place.
             self.map.keys.swap_indices(self.index, new_index);
@@ -297,6 +368,121 @@ impl<'a> Entry<'a> {
             vacant.insert(produce()?);
         }
         Ok(())
+    }
+}
+
+use crate::operation::field_selection::FieldSelection;
+use crate::operation::fragment_spread_selection::FragmentSpreadSelection;
+use crate::operation::inline_fragment_selection::InlineFragmentSelection;
+use crate::operation::SelectionSet;
+use crate::operation::SiblingTypename;
+
+/// A mutable reference to a `Selection` value in a `SelectionMap`, which
+/// also disallows changing key-related data (to maintain the invariant that a value's key is
+/// the same as it's map entry's key).
+#[derive(Debug)]
+pub(crate) enum SelectionValue<'a> {
+    Field(FieldSelectionValue<'a>),
+    FragmentSpread(FragmentSpreadSelectionValue<'a>),
+    InlineFragment(InlineFragmentSelectionValue<'a>),
+}
+
+impl<'a> SelectionValue<'a> {
+    fn new(selection: &'a mut Selection) -> Self {
+        match selection {
+            Selection::Field(field_selection) => {
+                SelectionValue::Field(FieldSelectionValue::new(field_selection))
+            }
+            Selection::FragmentSpread(fragment_spread_selection) => SelectionValue::FragmentSpread(
+                FragmentSpreadSelectionValue::new(fragment_spread_selection),
+            ),
+            Selection::InlineFragment(inline_fragment_selection) => SelectionValue::InlineFragment(
+                InlineFragmentSelectionValue::new(inline_fragment_selection),
+            ),
+        }
+    }
+
+    pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
+        match self {
+            Self::Field(field) => field.get_directives_mut(),
+            Self::FragmentSpread(spread) => spread.get_directives_mut(),
+            Self::InlineFragment(inline) => inline.get_directives_mut(),
+        }
+    }
+
+    pub(super) fn get_selection_set_mut(&mut self) -> Option<&mut SelectionSet> {
+        match self {
+            Self::Field(field) => field.get_selection_set_mut().as_mut(),
+            Self::FragmentSpread(spread) => Some(spread.get_selection_set_mut()),
+            Self::InlineFragment(inline) => Some(inline.get_selection_set_mut()),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct FieldSelectionValue<'a>(&'a mut Arc<FieldSelection>);
+
+impl<'a> FieldSelectionValue<'a> {
+    pub(crate) fn new(field_selection: &'a mut Arc<FieldSelection>) -> Self {
+        Self(field_selection)
+    }
+
+    pub(crate) fn get(&self) -> &Arc<FieldSelection> {
+        self.0
+    }
+
+    pub(crate) fn get_sibling_typename_mut(&mut self) -> &mut Option<SiblingTypename> {
+        Arc::make_mut(self.0).field.sibling_typename_mut()
+    }
+
+    pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
+        Arc::make_mut(self.0).field.directives_mut()
+    }
+
+    pub(crate) fn get_selection_set_mut(&mut self) -> &mut Option<SelectionSet> {
+        &mut Arc::make_mut(self.0).selection_set
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct FragmentSpreadSelectionValue<'a>(&'a mut Arc<FragmentSpreadSelection>);
+
+impl<'a> FragmentSpreadSelectionValue<'a> {
+    pub(crate) fn new(fragment_spread_selection: &'a mut Arc<FragmentSpreadSelection>) -> Self {
+        Self(fragment_spread_selection)
+    }
+
+    pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
+        Arc::make_mut(self.0).spread.directives_mut()
+    }
+
+    pub(crate) fn get_selection_set_mut(&mut self) -> &mut SelectionSet {
+        &mut Arc::make_mut(self.0).selection_set
+    }
+
+    pub(crate) fn get(&self) -> &Arc<FragmentSpreadSelection> {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct InlineFragmentSelectionValue<'a>(&'a mut Arc<InlineFragmentSelection>);
+
+impl<'a> InlineFragmentSelectionValue<'a> {
+    pub(crate) fn new(inline_fragment_selection: &'a mut Arc<InlineFragmentSelection>) -> Self {
+        Self(inline_fragment_selection)
+    }
+
+    pub(crate) fn get(&self) -> &Arc<InlineFragmentSelection> {
+        self.0
+    }
+
+    pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
+        Arc::make_mut(self.0).inline_fragment.directives_mut()
+    }
+
+    pub(crate) fn get_selection_set_mut(&mut self) -> &mut SelectionSet {
+        &mut Arc::make_mut(self.0).selection_set
     }
 }
 
