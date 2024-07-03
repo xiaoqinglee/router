@@ -205,7 +205,7 @@ pub(crate) fn remove_conditions_from_selection_set(
             Ok(selection_set.clone())
         }
         Conditions::Variables(variable_conditions) => {
-            let mut selection_map = SelectionMap::new();
+            let mut selection_map = SelectionMap::empty();
 
             for selection in selection_set.selections.values() {
                 let element = selection.element()?;
@@ -248,7 +248,7 @@ pub(crate) fn remove_unneeded_top_level_fragment_directives(
     selection_set: &SelectionSet,
     unneded_directives: &DirectiveList,
 ) -> Result<SelectionSet, FederationError> {
-    let mut selection_map = SelectionMap::new();
+    let mut selection_map = SelectionMap::empty();
 
     for selection in selection_set.selections.values() {
         match selection {

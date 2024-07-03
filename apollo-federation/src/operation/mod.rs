@@ -50,6 +50,7 @@ use crate::schema::ValidFederationSchema;
 mod contains;
 mod optimize;
 mod rebase;
+mod selection_map;
 mod simplify;
 #[cfg(test)]
 mod tests;
@@ -202,201 +203,17 @@ impl PartialEq for SelectionSet {
 
 impl Eq for SelectionSet {}
 
-mod selection_map {
-    use std::borrow::Cow;
-    use std::iter::Map;
-    use std::ops::Deref;
+mod selection_map_old {
     use std::sync::Arc;
 
     use apollo_compiler::executable;
-    use indexmap::IndexMap;
 
-    use crate::error::FederationError;
-    use crate::error::SingleFederationError::Internal;
     use crate::operation::field_selection::FieldSelection;
     use crate::operation::fragment_spread_selection::FragmentSpreadSelection;
     use crate::operation::inline_fragment_selection::InlineFragmentSelection;
-    use crate::operation::HasSelectionKey;
     use crate::operation::Selection;
-    use crate::operation::SelectionKey;
     use crate::operation::SelectionSet;
     use crate::operation::SiblingTypename;
-
-    /// A "normalized" selection map is an optimized representation of a selection set which does
-    /// not contain selections with the same selection "key". Selections that do have the same key
-    /// are  merged during the normalization process. By storing a selection set as a map, we can
-    /// efficiently merge/join multiple selection sets.
-    ///
-    /// Because the key depends strictly on the value, we expose the underlying map's API in a
-    /// read-only capacity, while mutations use an API closer to `IndexSet`. We don't just use an
-    /// `IndexSet` since key computation is expensive (it involves sorting). This type is in its own
-    /// module to prevent code from accidentally mutating the underlying map outside the mutation
-    /// API.
-    #[derive(Debug, Clone, PartialEq, Eq, Default)]
-    pub(crate) struct SelectionMap(IndexMap<SelectionKey, Selection>);
-
-    impl Deref for SelectionMap {
-        type Target = IndexMap<SelectionKey, Selection>;
-
-        fn deref(&self) -> &Self::Target {
-            &self.0
-        }
-    }
-
-    impl SelectionMap {
-        pub(crate) fn new() -> Self {
-            SelectionMap(IndexMap::new())
-        }
-
-        pub(crate) fn clear(&mut self) {
-            self.0.clear();
-        }
-
-        pub(crate) fn insert(&mut self, value: Selection) -> Option<Selection> {
-            self.0.insert(value.key(), value)
-        }
-
-        /// Insert a selection at a specific index.
-        pub(crate) fn insert_at(&mut self, index: usize, value: Selection) -> Option<Selection> {
-            self.0.shift_insert(index, value.key(), value)
-        }
-
-        /// Remove a selection from the map. Returns the selection and its numeric index.
-        pub(crate) fn remove(&mut self, key: &SelectionKey) -> Option<(usize, Selection)> {
-            // We specifically use shift_remove() instead of swap_remove() to maintain order.
-            self.0
-                .shift_remove_full(key)
-                .map(|(index, _key, selection)| (index, selection))
-        }
-
-        pub(crate) fn retain(
-            &mut self,
-            mut predicate: impl FnMut(&SelectionKey, &Selection) -> bool,
-        ) {
-            self.0.retain(|k, v| predicate(k, v))
-        }
-
-        pub(crate) fn get_mut(&mut self, key: &SelectionKey) -> Option<SelectionValue> {
-            self.0.get_mut(key).map(SelectionValue::new)
-        }
-
-        pub(crate) fn iter_mut(&mut self) -> IterMut {
-            self.0.iter_mut().map(|(k, v)| (k, SelectionValue::new(v)))
-        }
-
-        pub(super) fn entry(&mut self, key: SelectionKey) -> Entry {
-            match self.0.entry(key) {
-                indexmap::map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
-                indexmap::map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
-            }
-        }
-
-        pub(crate) fn extend(&mut self, other: SelectionMap) {
-            self.0.extend(other.0)
-        }
-
-        pub(crate) fn extend_ref(&mut self, other: &SelectionMap) {
-            self.0
-                .extend(other.iter().map(|(k, v)| (k.clone(), v.clone())))
-        }
-
-        /// Returns the selection set resulting from "recursively" filtering any selection
-        /// that does not match the provided predicate.
-        /// This method calls `predicate` on every selection of the selection set,
-        /// not just top-level ones, and apply a "depth-first" strategy:
-        /// when the predicate is called on a given selection it is guaranteed that
-        /// filtering has happened on all the selections of its sub-selection.
-        pub(crate) fn filter_recursive_depth_first(
-            &self,
-            predicate: &mut dyn FnMut(&Selection) -> Result<bool, FederationError>,
-        ) -> Result<Cow<'_, Self>, FederationError> {
-            fn recur_sub_selections<'sel>(
-                selection: &'sel Selection,
-                predicate: &mut dyn FnMut(&Selection) -> Result<bool, FederationError>,
-            ) -> Result<Cow<'sel, Selection>, FederationError> {
-                Ok(match selection {
-                    Selection::Field(field) => {
-                        if let Some(sub_selections) = &field.selection_set {
-                            match sub_selections.filter_recursive_depth_first(predicate)? {
-                                Cow::Borrowed(_) => Cow::Borrowed(selection),
-                                Cow::Owned(new) => Cow::Owned(Selection::from_field(
-                                    field.field.clone(),
-                                    Some(new),
-                                )),
-                            }
-                        } else {
-                            Cow::Borrowed(selection)
-                        }
-                    }
-                    Selection::InlineFragment(fragment) => match fragment
-                        .selection_set
-                        .filter_recursive_depth_first(predicate)?
-                    {
-                        Cow::Borrowed(_) => Cow::Borrowed(selection),
-                        Cow::Owned(selection_set) => Cow::Owned(Selection::InlineFragment(
-                            Arc::new(InlineFragmentSelection::new(
-                                fragment.inline_fragment.clone(),
-                                selection_set,
-                            )),
-                        )),
-                    },
-                    Selection::FragmentSpread(_) => {
-                        return Err(FederationError::internal("unexpected fragment spread"))
-                    }
-                })
-            }
-            let mut iter = self.0.iter();
-            let mut enumerated = (&mut iter).enumerate();
-            let mut new_map: IndexMap<_, _>;
-            loop {
-                let Some((index, (key, selection))) = enumerated.next() else {
-                    return Ok(Cow::Borrowed(self));
-                };
-                let filtered = recur_sub_selections(selection, predicate)?;
-                let keep = predicate(&filtered)?;
-                if keep && matches!(filtered, Cow::Borrowed(_)) {
-                    // Nothing changed so far, continue without cloning
-                    continue;
-                }
-
-                // Clone the map so far
-                new_map = self.0.as_slice()[..index]
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-
-                if keep {
-                    new_map.insert(key.clone(), filtered.into_owned());
-                }
-                break;
-            }
-            for (key, selection) in iter {
-                let filtered = recur_sub_selections(selection, predicate)?;
-                if predicate(&filtered)? {
-                    new_map.insert(key.clone(), filtered.into_owned());
-                }
-            }
-            Ok(Cow::Owned(Self(new_map)))
-        }
-    }
-
-    impl<A> FromIterator<A> for SelectionMap
-    where
-        A: Into<Selection>,
-    {
-        fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> Self {
-            let mut map = Self::new();
-            for selection in iter {
-                map.insert(selection.into());
-            }
-            map
-        }
-    }
-
-    type IterMut<'a> = Map<
-        indexmap::map::IterMut<'a, SelectionKey, Selection>,
-        fn((&'a SelectionKey, &'a mut Selection)) -> (&'a SelectionKey, SelectionValue<'a>),
-    >;
 
     /// A mutable reference to a `Selection` value in a `SelectionMap`, which
     /// also disallows changing key-related data (to maintain the invariant that a value's key is
@@ -510,133 +327,20 @@ mod selection_map {
             &mut Arc::make_mut(self.0).selection_set
         }
     }
-
-    pub(crate) enum Entry<'a> {
-        Occupied(OccupiedEntry<'a>),
-        Vacant(VacantEntry<'a>),
-    }
-
-    impl<'a> Entry<'a> {
-        pub fn or_insert(
-            self,
-            produce: impl FnOnce() -> Result<Selection, FederationError>,
-        ) -> Result<SelectionValue<'a>, FederationError> {
-            match self {
-                Self::Occupied(entry) => Ok(entry.into_mut()),
-                Self::Vacant(entry) => entry.insert(produce()?),
-            }
-        }
-    }
-
-    pub(crate) struct OccupiedEntry<'a>(indexmap::map::OccupiedEntry<'a, SelectionKey, Selection>);
-
-    impl<'a> OccupiedEntry<'a> {
-        pub(crate) fn get(&self) -> &Selection {
-            self.0.get()
-        }
-
-        pub(crate) fn get_mut(&mut self) -> SelectionValue {
-            SelectionValue::new(self.0.get_mut())
-        }
-
-        pub(crate) fn into_mut(self) -> SelectionValue<'a> {
-            SelectionValue::new(self.0.into_mut())
-        }
-
-        pub(crate) fn key(&self) -> &SelectionKey {
-            self.0.key()
-        }
-
-        pub(crate) fn remove(self) -> Selection {
-            // We specifically use shift_remove() instead of swap_remove() to maintain order.
-            self.0.shift_remove()
-        }
-    }
-
-    pub(crate) struct VacantEntry<'a>(indexmap::map::VacantEntry<'a, SelectionKey, Selection>);
-
-    impl<'a> VacantEntry<'a> {
-        pub(crate) fn key(&self) -> &SelectionKey {
-            self.0.key()
-        }
-
-        pub(crate) fn insert(
-            self,
-            value: Selection,
-        ) -> Result<SelectionValue<'a>, FederationError> {
-            if *self.key() != value.key() {
-                return Err(Internal {
-                    message: format!(
-                        "Key mismatch when inserting selection {} into vacant entry ",
-                        value
-                    ),
-                }
-                .into());
-            }
-            Ok(SelectionValue::new(self.0.insert(value)))
-        }
-    }
-
-    impl IntoIterator for SelectionMap {
-        type Item = <IndexMap<SelectionKey, Selection> as IntoIterator>::Item;
-        type IntoIter = <IndexMap<SelectionKey, Selection> as IntoIterator>::IntoIter;
-
-        fn into_iter(self) -> Self::IntoIter {
-            <IndexMap<SelectionKey, Selection> as IntoIterator>::into_iter(self.0)
-        }
-    }
 }
 
-pub(crate) use selection_map::FieldSelectionValue;
-pub(crate) use selection_map::FragmentSpreadSelectionValue;
-pub(crate) use selection_map::InlineFragmentSelectionValue;
+pub(crate) use selection_map::HasSelectionKey;
+pub(crate) use selection_map::SelectionKey;
 pub(crate) use selection_map::SelectionMap;
-pub(crate) use selection_map::SelectionValue;
-
-/// A selection "key" (unrelated to the federation `@key` directive) is an identifier of a selection
-/// (field, inline fragment, or fragment spread) that is used to determine whether two selections
-/// can be merged.
-///
-/// In order to merge two selections they need to
-/// * reference the same field/inline fragment
-/// * specify the same directives
-/// * directives have to be applied in the same order
-/// * directive arguments order does not matter (they get automatically sorted by their names).
-/// * selection cannot specify @defer directive
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum SelectionKey {
-    Field {
-        /// The field alias (if specified) or field name in the resulting selection set.
-        response_name: Name,
-        /// directives applied on the field
-        directives: Arc<executable::DirectiveList>,
-    },
-    FragmentSpread {
-        /// The name of the fragment.
-        fragment_name: Name,
-        /// Directives applied on the fragment spread (does not contain @defer).
-        directives: Arc<executable::DirectiveList>,
-    },
-    InlineFragment {
-        /// The optional type condition of the fragment.
-        type_condition: Option<Name>,
-        /// Directives applied on the fragment spread (does not contain @defer).
-        directives: Arc<executable::DirectiveList>,
-    },
-    Defer {
-        /// Unique selection ID used to distinguish deferred fragment spreads that cannot be merged.
-        deferred_id: SelectionId,
-    },
-}
+pub(crate) use selection_map_old::FieldSelectionValue;
+pub(crate) use selection_map_old::FragmentSpreadSelectionValue;
+pub(crate) use selection_map_old::InlineFragmentSelectionValue;
+pub(crate) use selection_map_old::SelectionValue;
 
 impl SelectionKey {
     pub(crate) fn is_typename_field(&self) -> bool {
         matches!(self, SelectionKey::Field { response_name, .. } if *response_name == TYPENAME_FIELD)
     }
-}
-
-pub(crate) trait HasSelectionKey {
-    fn key(&self) -> SelectionKey;
 }
 
 /// An analogue of the apollo-compiler type `Selection` that stores our other selection analogues
@@ -1919,16 +1623,15 @@ impl SelectionSet {
         Self {
             schema,
             type_position,
-            selections: Default::default(),
+            selections: Arc::new(SelectionMap::empty()),
         }
     }
 
     // TODO: Ideally, this method returns a proper, recursive iterator. As is, there is a lot of
     // overhead due to indirection, both from over allocation and from v-table lookups.
-    pub(crate) fn split_top_level_fields(self) -> Box<dyn Iterator<Item = SelectionSet>> {
+    pub(crate) fn split_top_level_fields(&self) -> Box<dyn Iterator<Item = SelectionSet> + '_> {
         let parent_type = self.type_position.clone();
-        let selections: IndexMap<SelectionKey, Selection> = (**self.selections).clone();
-        Box::new(selections.into_values().flat_map(move |sel| {
+        Box::new(self.selections.values().flat_map(move |sel| {
             let digest: Box<dyn Iterator<Item = SelectionSet>> = if sel.is_field() {
                 Box::new(std::iter::once(SelectionSet::from_selection(
                     parent_type.clone(),
@@ -1944,9 +1647,8 @@ impl SelectionSet {
                     sel.selection_set()
                         .ok()
                         .flatten()
-                        .cloned()
-                        .into_iter()
-                        .flat_map(SelectionSet::split_top_level_fields)
+                        .iter()
+                        .flat_map(|selection_set| selection_set.split_top_level_fields())
                         .filter_map(move |set| {
                             let parent_type = ele.parent_type_position();
                             Selection::from_element(ele.clone(), Some(set))
@@ -1979,7 +1681,7 @@ impl SelectionSet {
         selection: Selection,
     ) -> Self {
         let schema = selection.schema().clone();
-        let mut selection_map = SelectionMap::new();
+        let mut selection_map = SelectionMap::empty();
         selection_map.insert(selection);
         Self {
             schema,
@@ -2067,7 +1769,7 @@ impl SelectionSet {
         let mut merged = SelectionSet {
             schema: schema.clone(),
             type_position,
-            selections: Arc::new(SelectionMap::new()),
+            selections: Arc::new(SelectionMap::empty()),
         };
         merged.merge_selections_into(normalized_selections.iter())?;
         Ok(merged)
@@ -2253,7 +1955,7 @@ impl SelectionSet {
                     }
                 },
                 selection_map::Entry::Vacant(vacant) => {
-                    vacant.insert(other_selection.clone())?;
+                    vacant.insert(other_selection.clone());
                 }
             }
         }
@@ -2302,7 +2004,7 @@ impl SelectionSet {
         let mut expanded = SelectionSet {
             schema: self.schema.clone(),
             type_position: self.type_position.clone(),
-            selections: Arc::new(SelectionMap::new()),
+            selections: Arc::new(SelectionMap::empty()),
         };
         expanded.merge_selections_into(expanded_selections.iter())?;
         Ok(expanded)
@@ -2312,7 +2014,7 @@ impl SelectionSet {
         destination: &mut Vec<Selection>,
         selection_set: &SelectionSet,
     ) -> Result<(), FederationError> {
-        for (_, value) in selection_set.selections.iter() {
+        for value in selection_set.selections.values() {
             match value {
                 Selection::Field(field_selection) => {
                     let selections = match &field_selection.selection_set {
@@ -2585,7 +2287,7 @@ impl SelectionSet {
         selection_key_groups: impl Iterator<Item = impl Iterator<Item = &'a Selection>>,
         named_fragments: &NamedFragments,
     ) -> Result<SelectionSet, FederationError> {
-        let mut result = SelectionMap::new();
+        let mut result = SelectionMap::empty();
         for group in selection_key_groups {
             let selection = Self::make_selection(schema, parent_type, group, named_fragments)?;
             result.insert(selection);
@@ -2688,7 +2390,7 @@ impl SelectionSet {
         &self,
         parent_type_if_abstract: Option<AbstractTypeDefinitionPosition>,
     ) -> Result<SelectionSet, FederationError> {
-        let mut selection_map = SelectionMap::new();
+        let mut selection_map = SelectionMap::empty();
         if let Some(parent) = parent_type_if_abstract {
             if !self.has_top_level_typename_field() {
                 let typename_selection = Selection::from_field(
@@ -2990,7 +2692,7 @@ impl SelectionSet {
             }
         }
 
-        let mut selection_map = SelectionMap::new();
+        let mut selection_map = SelectionMap::empty();
         for selection in self.selections.values() {
             let path_element = selection.element()?.as_path_element();
             let subselection_aliases = remaining
@@ -3148,12 +2850,13 @@ impl SelectionSet {
     /// apply this normalization at the top level.
     fn without_unnecessary_fragments(&self) -> SelectionSet {
         let parent_type = &self.type_position;
-        let mut final_selections = SelectionMap::new();
+        let mut final_selections = SelectionMap::empty();
         for selection in self.selections.values() {
             match selection {
                 Selection::InlineFragment(inline_fragment) => {
                     if inline_fragment.is_unnecessary(parent_type) {
-                        final_selections.extend_ref(&inline_fragment.selection_set.selections);
+                        final_selections
+                            .extend(inline_fragment.selection_set.selections.values().cloned());
                     } else {
                         final_selections.insert(selection.clone());
                     }
@@ -3206,8 +2909,8 @@ impl SelectionSet {
 }
 
 impl IntoIterator for SelectionSet {
-    type Item = <IndexMap<SelectionKey, Selection> as IntoIterator>::Item;
-    type IntoIter = <IndexMap<SelectionKey, Selection> as IntoIterator>::IntoIter;
+    type Item = <SelectionMap as IntoIterator>::Item;
+    type IntoIter = <SelectionMap as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         Arc::unwrap_or_clone(self.selections).into_iter()
@@ -3215,11 +2918,11 @@ impl IntoIterator for SelectionSet {
 }
 
 pub(crate) struct FieldSelectionsIter<'sel> {
-    stack: Vec<indexmap::map::Values<'sel, SelectionKey, Selection>>,
+    stack: Vec<std::slice::Iter<'sel, Selection>>,
 }
 
 impl<'sel> FieldSelectionsIter<'sel> {
-    fn new(iter: indexmap::map::Values<'sel, SelectionKey, Selection>) -> Self {
+    fn new(iter: std::slice::Iter<'sel, Selection>) -> Self {
         Self { stack: vec![iter] }
     }
 }
@@ -4014,8 +3717,7 @@ impl NamedFragments {
         }
         if selection_set.selections.len() == 1 {
             // true if NOT field selection OR non-leaf field
-            return if let Some((_, Selection::Field(field_selection))) =
-                selection_set.selections.first()
+            return if let Some(Selection::Field(field_selection)) = selection_set.selections.first()
             {
                 field_selection.selection_set.is_some()
             } else {

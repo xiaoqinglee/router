@@ -2577,7 +2577,7 @@ fn operation_for_entities_fetch(
         .get_type(query_type_name.clone())?
         .try_into()?;
 
-    let mut map = SelectionMap::new();
+    let mut map = SelectionMap::empty();
     map.insert(entities_call);
 
     let selection_set = SelectionSet {
@@ -2777,13 +2777,13 @@ impl FetchInputs {
         handled_conditions: &Conditions,
         type_position: &CompositeTypeDefinitionPosition,
     ) -> Result<SelectionSet, FederationError> {
-        let mut selections = SelectionMap::new();
+        let mut selections = SelectionMap::empty();
         for selection_set in self.selection_sets_per_parent_type.values() {
             let selection_set =
                 remove_conditions_from_selection_set(selection_set, handled_conditions)?;
             // Making sure we're not generating something invalid.
             selection_set.validate(variable_definitions)?;
-            selections.extend_ref(&selection_set.selections)
+            selections.extend(selection_set.selections.values().cloned())
         }
         Ok(SelectionSet {
             schema: self.supergraph_schema.clone(),

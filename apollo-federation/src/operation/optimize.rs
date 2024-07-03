@@ -650,9 +650,10 @@ impl FragmentRestrictionAtType {
     // Using `F` in those cases is, while not 100% incorrect, at least not productive, and so we
     // skip it that case. This is essentially an optimization.
     fn is_useless(&self) -> bool {
-        match self.selections.selections.as_slice().split_first() {
+        let mut iter = self.selections.selections.keys();
+        match iter.next() {
             None => true,
-            Some((first, rest)) => rest.is_empty() && first.0.is_typename_field(),
+            Some(first) => iter.next().is_none() && first.is_typename_field(),
         }
     }
 }

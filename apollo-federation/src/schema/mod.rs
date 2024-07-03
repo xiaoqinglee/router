@@ -232,6 +232,12 @@ impl ValidFederationSchema {
         Self::new_assume_valid(schema).map_err(|(_schema, error)| error)
     }
 
+    #[cfg(test)]
+    pub fn parse(input: &str) -> Result<ValidFederationSchema, FederationError> {
+        let schema = Schema::parse_and_validate(input, "schema.graphql")?;
+        Self::new(schema)
+    }
+
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.schema, &other.schema)
     }

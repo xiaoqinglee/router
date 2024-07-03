@@ -103,7 +103,7 @@ impl FieldSelection {
                     }),
                     None,
                 );
-                let mut typename_selection = SelectionMap::new();
+                let mut typename_selection = SelectionMap::empty();
                 typename_selection.insert(non_included_typename);
 
                 normalized_selection.selections = Arc::new(typename_selection);
@@ -268,7 +268,7 @@ impl InlineFragmentSelection {
         if self.inline_fragment.directives.is_empty()
             && this_condition.is_some_and(|c| c.is_abstract_type())
         {
-            let mut liftable_selections = SelectionMap::new();
+            let mut liftable_selections = SelectionMap::empty();
             for (_, selection) in selection_set.selections.iter() {
                 match selection {
                     Selection::FragmentSpread(spread_selection) => {
@@ -334,12 +334,12 @@ impl InlineFragmentSelection {
                 .into();
 
                 // Since liftable_selections are changing their parent, we need to rebase them.
-                liftable_selections = liftable_selections
+                let liftable_selections = liftable_selections
                     .into_iter()
                     .map(|(_key, sel)| sel.rebase_on(parent_type, named_fragments, schema))
-                    .collect::<Result<_, _>>()?;
+                    .collect::<Result<Vec<_>, _>>()?;
 
-                let mut final_selection_map = SelectionMap::new();
+                let mut final_selection_map = SelectionMap::empty();
                 final_selection_map.insert(final_inline_fragment);
                 final_selection_map.extend(liftable_selections);
                 let final_selections = SelectionSet {
@@ -460,7 +460,7 @@ impl SelectionSet {
         let mut normalized_selections = Self {
             schema: schema.clone(),
             type_position: parent_type.clone(),
-            selections: Default::default(), // start empty
+            selections: Arc::new(SelectionMap::empty()), // start empty
         };
         for selection in self.selections.values() {
             if let Some(selection_or_set) =
