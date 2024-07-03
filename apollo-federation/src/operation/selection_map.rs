@@ -55,6 +55,11 @@ pub(crate) struct SelectionMap {
     keys: IndexSet<SelectionKey>,
 }
 
+pub(crate) enum ModifySelection {
+    Keep,
+    Remove,
+}
+
 impl SelectionMap {
     pub(crate) fn empty() -> Self {
         Self {
@@ -185,6 +190,29 @@ impl SelectionMap {
             .zip(self.selections.iter_mut().map(SelectionValue::new))
     }
 
+    /// Modify selections in the map. Modifications may change selection keys but not introduce
+    /// key conflicts.
+    /// TODO(@goto-bus-stop): it's important that you *can* merge keys
+    pub(crate) fn modify_selections(
+        &mut self,
+        mut modify: impl FnMut(&mut Selection) -> Result<ModifySelection, FederationError>,
+    ) -> Result<(), FederationError> {
+        let mut index = 0;
+        while index < self.selections.len() {
+            let mut entry = OccupiedEntry { map: self, index };
+            match entry.modify(&mut modify)? {
+                ModifySelection::Keep => {
+                    index += 1;
+                }
+                ModifySelection::Remove => {
+                    self.keys.shift_remove_index(index);
+                    self.selections.remove(index);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Returns the selection set resulting from "recursively" filtering any selection
     /// that does not match the provided predicate.
     /// This method calls `predicate` on every selection of the selection set,
@@ -282,13 +310,13 @@ impl<'a> OccupiedEntry<'a> {
         &self.map.selections[self.index]
     }
 
-    pub(crate) fn modify(
+    pub(crate) fn modify<T>(
         &mut self,
-        modify: impl FnOnce(&mut Selection) -> Result<(), FederationError>,
-    ) -> Result<(), FederationError> {
+        modify: impl FnOnce(&mut Selection) -> Result<T, FederationError>,
+    ) -> Result<T, FederationError> {
         let old_key = self.map.keys.get_index(self.index).unwrap();
         let selection = &mut self.map.selections[self.index];
-        modify(selection)?;
+        let ret = modify(selection)?;
         let new_key = selection.key();
 
         // If the key is changed we need to reinsert it.
@@ -303,7 +331,7 @@ impl<'a> OccupiedEntry<'a> {
             self.map.keys.pop();
         }
 
-        Ok(())
+        Ok(ret)
     }
 }
 
