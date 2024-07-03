@@ -44,6 +44,8 @@ use crate::LicenseSource;
 
 static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
 static GLOBAL_THREAD_HIGH: AtomicUsize = AtomicUsize::new(0);
+static GLOBAL_THREAD_PARKED: AtomicUsize = AtomicUsize::new(0);
+static GLOBAL_THREAD_PARKED_HIGH: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(all(
     feature = "global-allocator",
@@ -386,12 +388,23 @@ pub fn main() -> Result<()> {
     builder.on_thread_stop(|| {
         GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::Relaxed);
     });
+    builder.on_thread_park(|| {
+        let prev_count = GLOBAL_THREAD_PARKED.fetch_add(1, Ordering::Relaxed);
+        if prev_count >= GLOBAL_THREAD_PARKED_HIGH.load(Ordering::Relaxed) {
+            GLOBAL_THREAD_PARKED_HIGH.store(prev_count + 1, Ordering::Relaxed);
+        }
+    });
+    builder.on_thread_unpark(|| {
+        GLOBAL_THREAD_PARKED.fetch_sub(1, Ordering::Relaxed);
+    });
     let runtime = builder.build()?;
     let result = runtime.block_on(Executable::builder().start());
     tracing::info!(
-        "thread count: {}, thread high: {}",
+        "thread count: {}, thread high: {}, thread parked: {}, thread parked high: {}",
         GLOBAL_THREAD_COUNT.load(Ordering::Relaxed),
-        GLOBAL_THREAD_HIGH.load(Ordering::Relaxed)
+        GLOBAL_THREAD_HIGH.load(Ordering::Relaxed),
+        GLOBAL_THREAD_PARKED.load(Ordering::Relaxed),
+        GLOBAL_THREAD_PARKED_HIGH.load(Ordering::Relaxed)
     );
     result
 }
