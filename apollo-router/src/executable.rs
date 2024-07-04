@@ -1,6 +1,7 @@
 //! Main entry point for CLI command to start server.
 
 use std::cell::Cell;
+use std::cell::RefCell;
 use std::env;
 use std::ffi::OsStr;
 use std::fmt;
@@ -46,6 +47,29 @@ static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
 static GLOBAL_THREAD_HIGH: AtomicUsize = AtomicUsize::new(0);
 static GLOBAL_THREAD_PARKED: AtomicUsize = AtomicUsize::new(0);
 static GLOBAL_THREAD_PARKED_HIGH: AtomicUsize = AtomicUsize::new(0);
+
+// static GLOBAL_PARK_INFO: Arc<Mutex<MovingAverage>> = Arc::new(Mutex::new(MovingAverage::new(0.0)));
+
+thread_local! {
+    pub static AVERAGE: RefCell<MovingAverage>= RefCell::new(MovingAverage::new(0.0));
+}
+
+struct MovingAverage {
+    average: f64,
+    count: u64,
+}
+
+impl MovingAverage {
+    fn new(average: f64) -> Self {
+        MovingAverage { average, count: 1 }
+    }
+
+    fn update(&mut self, value: f64) {
+        self.count += 1;
+        let f_count = self.count as f64;
+        self.average = self.average * (f_count - 1.0) / f_count + value / f_count;
+    }
+}
 
 #[cfg(all(
     feature = "global-allocator",
@@ -387,14 +411,23 @@ pub fn main() -> Result<()> {
     });
     builder.on_thread_stop(|| {
         GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::Relaxed);
+        tracing::info!(
+            "Average park count for thread({:?}): {}",
+            std::thread::current().id(),
+            AVERAGE.with_borrow(|v| v.average)
+        );
     });
     builder.on_thread_park(|| {
+        let current = AVERAGE.with_borrow(|v| v.average);
+        AVERAGE.with_borrow_mut(|v| v.update(current + 1.0));
         let prev_count = GLOBAL_THREAD_PARKED.fetch_add(1, Ordering::Relaxed);
         if prev_count >= GLOBAL_THREAD_PARKED_HIGH.load(Ordering::Relaxed) {
             GLOBAL_THREAD_PARKED_HIGH.store(prev_count + 1, Ordering::Relaxed);
         }
     });
     builder.on_thread_unpark(|| {
+        let current = AVERAGE.with_borrow(|v| v.average);
+        AVERAGE.with_borrow_mut(|v| v.update(current - 1.0));
         GLOBAL_THREAD_PARKED.fetch_sub(1, Ordering::Relaxed);
     });
     let runtime = builder.build()?;
