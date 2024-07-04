@@ -58,6 +58,7 @@ pub(crate) struct SelectionMap {
 pub(crate) enum ModifySelection {
     Keep,
     Remove,
+    // Flatten(SelectionSet / Vec<Selection> / Iterator<Selection>)
 }
 
 impl SelectionMap {
@@ -314,21 +315,56 @@ impl<'a> OccupiedEntry<'a> {
         &mut self,
         modify: impl FnOnce(&mut Selection) -> Result<T, FederationError>,
     ) -> Result<T, FederationError> {
-        let old_key = self.map.keys.get_index(self.index).unwrap();
+        let old_key = self.map.keys.get_index(self.index).unwrap().clone();
         let selection = &mut self.map.selections[self.index];
         let ret = modify(selection)?;
-        let new_key = selection.key();
+        let modified_key = selection.key();
 
         // If the key is changed we need to reinsert it.
-        if *old_key != new_key {
+        if old_key != modified_key {
             // First insert the new key.
-            let (new_index, true) = self.map.keys.insert_full(new_key) else {
-                panic!("key collision. the selection map is now in an invalid state.");
-            };
-            // Then move it into place.
-            self.map.keys.swap_indices(self.index, new_index);
-            // And remove the old key.
-            self.map.keys.pop();
+            match self.map.keys.insert_full(modified_key) {
+                (new_index, true) => {
+                    // Then move it into place.
+                    self.map.keys.swap_indices(self.index, new_index);
+                    // And remove the old key.
+                    self.map.keys.pop();
+                }
+                (mut merge_index, false) => {
+                    assert_ne!(self.index, merge_index);
+
+                    // Remove the modified selection to merge it with the conflicting selection.
+                    self.map.keys.shift_remove(&old_key);
+                    let modified_selection = self.map.selections.remove(self.index);
+
+                    // We just removed `self.index`: this may have caused the other selection to
+                    // shift.
+                    if self.index < merge_index {
+                        merge_index -= 1;
+                    }
+
+                    match dbg!(&mut self.map.selections[merge_index], modified_selection) {
+                        (Selection::Field(old_field), Selection::Field(new_field)) => {
+                            FieldSelectionValue::new(old_field)
+                                .merge_into(std::iter::once(&*new_field))?;
+                        }
+                        (
+                            Selection::InlineFragment(old_fragment),
+                            Selection::InlineFragment(new_fragment),
+                        ) => InlineFragmentSelectionValue::new(old_fragment)
+                            .merge_into(std::iter::once(&*new_fragment))?,
+                        (
+                            Selection::FragmentSpread(old_fragment),
+                            Selection::FragmentSpread(new_fragment),
+                        ) => FragmentSpreadSelectionValue::new(old_fragment)
+                            .merge_into(std::iter::once(&*new_fragment))?,
+                        // `insert_full` returning `(_, false)` means the selection keys matched,
+                        // which also means the kinds of selection must have been the same, so this
+                        // branch can never be reached.
+                        _ => unreachable!(),
+                    }
+                }
+            }
         }
 
         Ok(ret)
@@ -637,6 +673,72 @@ mod tests {
             selections,
             [
                 &Selection::from_field(a, None),
+                &Selection::from_field(
+                    Field::from_position(&schema, q.field(name!("b")).into()),
+                    None
+                ),
+                &Selection::from_field(
+                    Field::from_position(&schema, q.field(name!("c")).into()),
+                    None
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn merge_field_selections() {
+        let schema = ValidFederationSchema::parse(
+            r#"
+            type Query {
+                a: Int
+                b: Int
+                c: Int
+            }
+        "#,
+        )
+        .unwrap();
+
+        let q = ObjectTypeDefinitionPosition::new(name!("Query"));
+        let a = Field::from_position(&schema, q.field(name!("a")).into()).with_subselection(None);
+        let b = Field::from_position(&schema, q.field(name!("b")).into()).with_subselection(None);
+        let c = Field::from_position(&schema, q.field(name!("c")).into()).with_subselection(None);
+        let mut selection_map: SelectionMap =
+            [a.clone(), b.clone(), c.clone()].into_iter().collect();
+
+        selection_map
+            .entry(a.key())
+            .and_modify(|selection| {
+                *selection = Field::from_position(&schema, q.field(name!("b")).into())
+                    .with_subselection(None)
+                    .into();
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(
+            selection_map.entry(a.key()).is_vacant(),
+            "The key was changed and should have been updated"
+        );
+
+        let keys = selection_map.keys().collect::<Vec<_>>();
+        assert_eq!(
+            keys,
+            [
+                &SelectionKey::Field {
+                    response_name: name!("b"),
+                    directives: Default::default(),
+                },
+                &SelectionKey::Field {
+                    response_name: name!("c"),
+                    directives: Default::default(),
+                },
+            ]
+        );
+
+        let selections = selection_map.values().collect::<Vec<_>>();
+        assert_eq!(
+            selections,
+            [
                 &Selection::from_field(
                     Field::from_position(&schema, q.field(name!("b")).into()),
                     None
