@@ -3103,9 +3103,11 @@ impl FieldSelection {
 }
 
 impl<'a> FieldSelectionValue<'a> {
-    /// Merges the given normalized field selections into this one (this method assumes the keys
-    /// already match).
-    pub(crate) fn merge_into<'op>(
+    /// Merges the given field selections into this one.
+    ///
+    /// ## Preconditions
+    /// The selection keys must match.
+    fn merge_into<'op>(
         &mut self,
         others: impl Iterator<Item = &'op FieldSelection>,
     ) -> Result<(), FederationError> {
@@ -3113,40 +3115,38 @@ impl<'a> FieldSelectionValue<'a> {
         let mut selection_sets = vec![];
         for other in others {
             let other_field = &other.field;
+
+            debug_assert_eq!(
+                self_field.key(),
+                other_field.key(),
+                "merge_into requires keys of merged selections to be the same"
+            );
+
             if other_field.schema != self_field.schema {
-                return Err(Internal {
-                    message: "Cannot merge field selections from different schemas".to_owned(),
-                }
-                .into());
+                return Err(FederationError::internal(
+                    "Cannot merge field selections from different schemas",
+                ));
             }
             if other_field.field_position != self_field.field_position {
-                return Err(Internal {
-                        message: format!(
-                            "Cannot merge field selection for field \"{}\" into a field selection for field \"{}\"",
-                            other_field.field_position,
-                            self_field.field_position,
-                        ),
-                    }.into());
+                return Err(FederationError::internal(format!(
+                    "Cannot merge field selection for field \"{}\" into a field selection for field \"{}\"",
+                    other_field.field_position,
+                    self_field.field_position,
+                )));
             }
             if self.get().selection_set.is_some() {
                 let Some(other_selection_set) = &other.selection_set else {
-                    return Err(Internal {
-                        message: format!(
-                            "Field \"{}\" has composite type but not a selection set",
-                            other_field.field_position,
-                        ),
-                    }
-                    .into());
+                    return Err(FederationError::internal(format!(
+                        "Field \"{}\" has composite type but not a selection set",
+                        other_field.field_position,
+                    )));
                 };
                 selection_sets.push(other_selection_set);
             } else if other.selection_set.is_some() {
-                return Err(Internal {
-                    message: format!(
-                        "Field \"{}\" has non-composite type but also has a selection set",
-                        other_field.field_position,
-                    ),
-                }
-                .into());
+                return Err(FederationError::internal(format!(
+                    "Field \"{}\" has non-composite type but also has a selection set",
+                    other_field.field_position,
+                )));
             }
         }
         if let Some(self_selection_set) = self.get_selection_set_mut() {
@@ -3178,21 +3178,30 @@ impl Field {
 }
 
 impl<'a> FragmentSpreadSelectionValue<'a> {
-    /// Merges the given normalized fragment spread selections into this one (this method assumes
-    /// the keys already match).
-    pub(crate) fn merge_into<'op>(
+    /// Merges the given fragment spread selections into this one.
+    ///
+    /// ## Preconditions
+    /// The selection keys must match.
+    fn merge_into<'op>(
         &mut self,
         others: impl Iterator<Item = &'op FragmentSpreadSelection>,
     ) -> Result<(), FederationError> {
         let self_fragment_spread = &self.get().spread;
         for other in others {
             let other_fragment_spread = &other.spread;
+
+            debug_assert_eq!(
+                self_fragment_spread.key(),
+                other_fragment_spread.key(),
+                "merge_into requires keys of merged selections to be the same"
+            );
+
             if other_fragment_spread.schema != self_fragment_spread.schema {
-                return Err(Internal {
-                    message: "Cannot merge fragment spread from different schemas".to_owned(),
-                }
-                .into());
+                return Err(FederationError::internal(
+                    "Cannot merge fragment spread from different schemas",
+                ));
             }
+
             // Nothing to do since the fragment spread is already part of the selection set.
             // Fragment spreads are uniquely identified by fragment name and applied directives.
             // Since there is already an entry for the same fragment spread, there is no point
@@ -3354,9 +3363,11 @@ impl InlineFragmentSelection {
 }
 
 impl<'a> InlineFragmentSelectionValue<'a> {
-    /// Merges the given normalized inline fragment selections into this one (this method assumes
-    /// the keys already match).
-    pub(crate) fn merge_into<'op>(
+    /// Merges the given inline fragment selections into this one.
+    ///
+    /// ## Preconditions
+    /// The selection keys must match.
+    fn merge_into<'op>(
         &mut self,
         others: impl Iterator<Item = &'op InlineFragmentSelection>,
     ) -> Result<(), FederationError> {
@@ -3364,22 +3375,26 @@ impl<'a> InlineFragmentSelectionValue<'a> {
         let mut selection_sets = vec![];
         for other in others {
             let other_inline_fragment = &other.inline_fragment;
+
+            debug_assert_eq!(
+                self_inline_fragment.key(),
+                other_inline_fragment.key(),
+                "merge_into requires keys of merged selections to be the same"
+            );
+
             if other_inline_fragment.schema != self_inline_fragment.schema {
-                return Err(Internal {
-                    message: "Cannot merge inline fragment from different schemas".to_owned(),
-                }
-                .into());
+                return Err(FederationError::internal(
+                    "Cannot merge inline fragment from different schemas",
+                ));
             }
             if other_inline_fragment.parent_type_position
                 != self_inline_fragment.parent_type_position
             {
-                return Err(Internal {
-                    message: format!(
-                        "Cannot merge inline fragment of parent type \"{}\" into an inline fragment of parent type \"{}\"",
-                        other_inline_fragment.parent_type_position,
-                        self_inline_fragment.parent_type_position,
-                    ),
-                }.into());
+                return Err(FederationError::internal(format!(
+                    "Cannot merge inline fragment of parent type \"{}\" into an inline fragment of parent type \"{}\"",
+                    other_inline_fragment.parent_type_position,
+                    self_inline_fragment.parent_type_position,
+                )));
             }
             selection_sets.push(&other.selection_set);
         }
