@@ -56,9 +56,12 @@ pub(crate) struct SelectionMap {
 }
 
 pub(crate) enum ModifySelection {
+    /// Keep this selection.
     Keep,
+    /// Remove this selection from the map.
     Remove,
-    // Flatten(SelectionSet / Vec<Selection> / Iterator<Selection>)
+    /// Replace this selection by the selections in the provided set.
+    Flatten(SelectionSet),
 }
 
 impl SelectionMap {
@@ -191,19 +194,141 @@ impl SelectionMap {
             .zip(self.selections.iter_mut().map(SelectionValue::new))
     }
 
+    /// Merge in selections at the given index.
+    ///
+    /// Returns an adjusted index: 1 past the final selection that this call added.
+    fn merge_at(
+        &mut self,
+        mut index: usize,
+        selections: impl Iterator<Item = Selection>,
+    ) -> Result<usize, FederationError> {
+        for selection in selections {
+            let key = selection.key();
+            match self.keys.insert_full(key) {
+                (new_index, true) => {
+                    // Move the key to the right place
+                    self.keys.swap_indices(index, new_index);
+                    // Insert the selection in the right place
+                    self.selections.insert(index, selection);
+                    index += 1;
+                }
+                (merge_index, false) => {
+                    assert_ne!(index, merge_index);
+
+                    match dbg!(&mut self.selections[merge_index], selection) {
+                        (Selection::Field(old_field), Selection::Field(new_field)) => {
+                            FieldSelectionValue::new(old_field)
+                                .merge_into(std::iter::once(&*new_field))?;
+                        }
+                        (
+                            Selection::InlineFragment(old_fragment),
+                            Selection::InlineFragment(new_fragment),
+                        ) => InlineFragmentSelectionValue::new(old_fragment)
+                            .merge_into(std::iter::once(&*new_fragment))?,
+                        (
+                            Selection::FragmentSpread(old_fragment),
+                            Selection::FragmentSpread(new_fragment),
+                        ) => FragmentSpreadSelectionValue::new(old_fragment)
+                            .merge_into(std::iter::once(&*new_fragment))?,
+                        // `insert_full` returning `(_, false)` means the selection keys matched,
+                        // which also means the kinds of selection must have been the same, so this
+                        // branch can never be reached.
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+        Ok(index)
+    }
+
+    /// Handle selection replacement or merging after a mutation.
+    ///
+    /// Note this does not work to *add* a selection to the map: both selections must already be in the map!
+    ///
+    /// `index` is the index where the mutation occurred.
+    /// `selection_key` is the new selection key after mutation.
+    fn handle_key_mutated(
+        &mut self,
+        index: usize,
+        selection_key: SelectionKey,
+    ) -> Result<bool, FederationError> {
+        match self.keys.insert_full(selection_key) {
+            (new_index, true) => {
+                // Then move it into place.
+                self.keys.swap_indices(index, new_index);
+                // And remove the old key.
+                self.keys.pop();
+                Ok(true)
+            }
+            (mut merge_index, false) => {
+                assert_ne!(index, merge_index);
+
+                // Remove the modified selection to merge it with the conflicting selection.
+                self.keys.shift_remove_index(index);
+                let modified_selection = self.selections.remove(index);
+
+                // We just removed `index`: this may have caused the other selection to
+                // shift.
+                if index < merge_index {
+                    merge_index -= 1;
+                }
+
+                match dbg!(&mut self.selections[merge_index], modified_selection) {
+                    (Selection::Field(old_field), Selection::Field(new_field)) => {
+                        FieldSelectionValue::new(old_field)
+                            .merge_into(std::iter::once(&*new_field))?;
+                    }
+                    (
+                        Selection::InlineFragment(old_fragment),
+                        Selection::InlineFragment(new_fragment),
+                    ) => InlineFragmentSelectionValue::new(old_fragment)
+                        .merge_into(std::iter::once(&*new_fragment))?,
+                    (
+                        Selection::FragmentSpread(old_fragment),
+                        Selection::FragmentSpread(new_fragment),
+                    ) => FragmentSpreadSelectionValue::new(old_fragment)
+                        .merge_into(std::iter::once(&*new_fragment))?,
+                    // `insert_full` returning `(_, false)` means the selection keys matched,
+                    // which also means the kinds of selection must have been the same, so this
+                    // branch can never be reached.
+                    _ => unreachable!(),
+                }
+
+                Ok(false)
+            }
+        }
+    }
+
     /// Modify selections in the map. Modifications may change selection keys but not introduce
     /// key conflicts.
-    /// TODO(@goto-bus-stop): it's important that you *can* merge keys
     pub(crate) fn modify_selections(
         &mut self,
         mut modify: impl FnMut(&mut Selection) -> Result<ModifySelection, FederationError>,
     ) -> Result<(), FederationError> {
         let mut index = 0;
         while index < self.selections.len() {
-            let mut entry = OccupiedEntry { map: self, index };
-            match entry.modify(&mut modify)? {
+            //let mut entry = OccupiedEntry { map: self, index };
+            let old_key = self.keys.get_index(index).unwrap().clone();
+            let selection = &mut self.selections[index];
+            match modify(selection)? {
                 ModifySelection::Keep => {
-                    index += 1;
+                    let new_key = selection.key();
+                    if new_key == old_key {
+                        // Simple case: any changes made do not affect the key,
+                        // so we do not need to move or merge it
+                        index += 1;
+                        continue;
+                    }
+
+                    if self.handle_key_mutated(index, new_key)? {
+                        index += 1;
+                    }
+                }
+                ModifySelection::Flatten(selection_set) => {
+                    // Remove the current selection and replace it by the new selections.
+                    self.keys.shift_remove_index(index);
+                    self.selections.remove(index);
+                    index = self.merge_at(index, selection_set.selections.values().cloned())?;
                 }
                 ModifySelection::Remove => {
                     self.keys.shift_remove_index(index);
@@ -322,49 +447,7 @@ impl<'a> OccupiedEntry<'a> {
 
         // If the key is changed we need to reinsert it.
         if old_key != modified_key {
-            // First insert the new key.
-            match self.map.keys.insert_full(modified_key) {
-                (new_index, true) => {
-                    // Then move it into place.
-                    self.map.keys.swap_indices(self.index, new_index);
-                    // And remove the old key.
-                    self.map.keys.pop();
-                }
-                (mut merge_index, false) => {
-                    assert_ne!(self.index, merge_index);
-
-                    // Remove the modified selection to merge it with the conflicting selection.
-                    self.map.keys.shift_remove(&old_key);
-                    let modified_selection = self.map.selections.remove(self.index);
-
-                    // We just removed `self.index`: this may have caused the other selection to
-                    // shift.
-                    if self.index < merge_index {
-                        merge_index -= 1;
-                    }
-
-                    match dbg!(&mut self.map.selections[merge_index], modified_selection) {
-                        (Selection::Field(old_field), Selection::Field(new_field)) => {
-                            FieldSelectionValue::new(old_field)
-                                .merge_into(std::iter::once(&*new_field))?;
-                        }
-                        (
-                            Selection::InlineFragment(old_fragment),
-                            Selection::InlineFragment(new_fragment),
-                        ) => InlineFragmentSelectionValue::new(old_fragment)
-                            .merge_into(std::iter::once(&*new_fragment))?,
-                        (
-                            Selection::FragmentSpread(old_fragment),
-                            Selection::FragmentSpread(new_fragment),
-                        ) => FragmentSpreadSelectionValue::new(old_fragment)
-                            .merge_into(std::iter::once(&*new_fragment))?,
-                        // `insert_full` returning `(_, false)` means the selection keys matched,
-                        // which also means the kinds of selection must have been the same, so this
-                        // branch can never be reached.
-                        _ => unreachable!(),
-                    }
-                }
-            }
+            self.map.handle_key_mutated(self.index, modified_key)?;
         }
 
         Ok(ret)
@@ -743,6 +826,90 @@ mod tests {
                 ),
                 &Selection::from_field(
                     Field::from_position(&schema, q.field(name!("c")).into()),
+                    None
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn flatten_field_selections() {
+        let schema = ValidFederationSchema::parse(
+            r#"
+            type Query {
+                a: Int
+                b: Int
+                c: Int
+                d: Int
+                e: Int
+                f: Int
+            }
+        "#,
+        )
+        .unwrap();
+
+        let q = ObjectTypeDefinitionPosition::new(name!("Query"));
+        let a = Field::from_position(&schema, q.field(name!("a")).into()).with_subselection(None);
+        let b = Field::from_position(&schema, q.field(name!("b")).into()).with_subselection(None);
+        let c = Field::from_position(&schema, q.field(name!("c")).into()).with_subselection(None);
+        let mut selection_map: SelectionMap =
+            [a.clone(), b.clone(), c.clone()].into_iter().collect();
+
+        selection_map
+            .modify_selections(|selection| {
+                Ok(ModifySelection::Flatten(SelectionSet::from_raw_selections(
+                    selection.schema().clone(),
+                    q.clone().into(),
+                    [
+                        Field::from_position(&schema, q.field(name!("d")).into())
+                            .with_subselection(None),
+                        Field::from_position(&schema, q.field(name!("e")).into())
+                            .with_subselection(None),
+                        Field::from_position(&schema, q.field(name!("f")).into())
+                            .with_subselection(None),
+                    ],
+                )))
+            })
+            .unwrap();
+
+        assert!(
+            selection_map.entry(a.key()).is_vacant(),
+            "The key was changed and should have been updated"
+        );
+
+        let keys = selection_map.keys().collect::<Vec<_>>();
+        assert_eq!(
+            keys,
+            [
+                &SelectionKey::Field {
+                    response_name: name!("d"),
+                    directives: Default::default(),
+                },
+                &SelectionKey::Field {
+                    response_name: name!("e"),
+                    directives: Default::default(),
+                },
+                &SelectionKey::Field {
+                    response_name: name!("f"),
+                    directives: Default::default(),
+                },
+            ]
+        );
+
+        let selections = selection_map.values().collect::<Vec<_>>();
+        assert_eq!(
+            selections,
+            [
+                &Selection::from_field(
+                    Field::from_position(&schema, q.field(name!("d")).into()),
+                    None
+                ),
+                &Selection::from_field(
+                    Field::from_position(&schema, q.field(name!("e")).into()),
+                    None
+                ),
+                &Selection::from_field(
+                    Field::from_position(&schema, q.field(name!("f")).into()),
                     None
                 ),
             ]
