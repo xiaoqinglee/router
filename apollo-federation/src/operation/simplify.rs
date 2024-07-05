@@ -6,7 +6,6 @@ use apollo_compiler::Node;
 
 use super::runtime_types_intersect;
 use super::Field;
-use super::FieldData;
 use super::FieldSelection;
 use super::FragmentSpreadSelection;
 use super::InlineFragmentSelection;
@@ -61,7 +60,7 @@ impl FieldSelection {
 
         let field_element =
             if self.field.schema() == schema && self.field.field_position == field_position {
-                self.field.data().clone()
+                self.field.clone()
             } else {
                 self.field
                     .with_updated_position(schema.clone(), field_position)
@@ -92,7 +91,7 @@ impl FieldSelection {
                         })],
                     })]);
                 let non_included_typename = Selection::from_field(
-                    Field::new(FieldData {
+                    Field {
                         schema: schema.clone(),
                         field_position: field_composite_type_position
                             .introspection_typename_field(),
@@ -100,7 +99,7 @@ impl FieldSelection {
                         arguments: Arc::new(vec![]),
                         directives,
                         sibling_typename: None,
-                    }),
+                    },
                     None,
                 );
                 let mut typename_selection = SelectionMap::empty();
@@ -238,14 +237,14 @@ impl InlineFragmentSelection {
                     parent_type.introspection_typename_field()
                 };
                 let typename_field_selection = Selection::from_field(
-                    Field::new(FieldData {
+                    Field {
                         schema: schema.clone(),
                         field_position: parent_typename_field,
                         alias: None,
                         arguments: Arc::new(vec![]),
                         directives: directives,
                         sibling_typename: None,
-                    }),
+                    },
                     None,
                 );
 

@@ -516,7 +516,7 @@ impl<'a> FragmentSpreadSelectionValue<'a> {
     }
 
     pub(super) fn get_directives_mut(&mut self) -> &mut executable::DirectiveList {
-        Arc::make_mut(self.0).spread.directives_mut()
+        &mut Arc::make_mut(self.0).spread.directives
     }
 
     pub(crate) fn get_selection_set_mut(&mut self) -> &mut SelectionSet {
@@ -556,7 +556,6 @@ mod tests {
     use apollo_compiler::name;
 
     use crate::operation::Field;
-    use crate::operation::FieldData;
     use crate::schema::position::ObjectTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
 
@@ -666,9 +665,8 @@ mod tests {
         );
 
         let selections = selection_map.values().collect::<Vec<_>>();
-        let mut a = FieldData::from_position(&schema, q.field(name!("a")).into());
+        let mut a = Field::from_position(&schema, q.field(name!("a")).into());
         a.alias = Some(name!("alias"));
-        let a = Field::new(a);
         assert_eq!(
             selections,
             [

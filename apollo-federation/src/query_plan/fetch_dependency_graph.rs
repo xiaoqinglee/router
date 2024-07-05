@@ -32,9 +32,7 @@ use crate::error::SingleFederationError;
 use crate::link::graphql_definition::DeferDirectiveArguments;
 use crate::operation::ContainmentOptions;
 use crate::operation::Field;
-use crate::operation::FieldData;
 use crate::operation::InlineFragment;
-use crate::operation::InlineFragmentData;
 use crate::operation::InlineFragmentSelection;
 use crate::operation::Operation;
 use crate::operation::RebasedFragments;
@@ -2558,7 +2556,7 @@ fn operation_for_entities_fetch(
     let entities = FieldDefinitionPosition::Object(query_type.field(ENTITIES_QUERY.clone()));
 
     let entities_call = Selection::from_element(
-        OpPathElement::Field(Field::new(FieldData {
+        OpPathElement::Field(Field {
             schema: subgraph_schema.clone(),
             field_position: entities,
             alias: None,
@@ -2569,7 +2567,7 @@ fn operation_for_entities_fetch(
             .into()]),
             directives: Default::default(),
             sibling_typename: None,
-        })),
+        }),
         Some(selection_set),
     )?;
 
@@ -3488,13 +3486,13 @@ fn wrap_selection_with_type_and_conditions<T>(
         // PORT_NOTE: JS code looks for type condition in the wrapping type's schema based on
         // the name of wrapping type. Not sure why.
         return wrap_in_fragment(
-            InlineFragment::new(InlineFragmentData {
+            InlineFragment {
                 schema: supergraph_schema.clone(),
                 parent_type_position: wrapping_type.clone(),
                 type_condition_position: Some(type_condition.clone()),
                 directives: Default::default(), // None
                 selection_id: SelectionId::new(),
-            }),
+            },
             initial,
         );
     }
@@ -3515,13 +3513,13 @@ fn wrap_selection_with_type_and_conditions<T>(
             .into()],
         };
         wrap_in_fragment(
-            InlineFragment::new(InlineFragmentData {
+            InlineFragment {
                 schema: supergraph_schema.clone(),
                 parent_type_position: wrapping_type.clone(),
                 type_condition_position: Some(type_condition.clone()),
                 directives: [directive].into_iter().collect(),
                 selection_id: SelectionId::new(),
-            }),
+            },
             acc,
         )
     })

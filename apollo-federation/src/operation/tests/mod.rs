@@ -1368,7 +1368,7 @@ fn field_element(
     object: apollo_compiler::Name,
     field: apollo_compiler::Name,
 ) -> OpPathElement {
-    OpPathElement::Field(super::Field::new(super::FieldData {
+    OpPathElement::Field(super::Field {
         schema: schema.clone(),
         field_position: ObjectTypeDefinitionPosition::new(object)
             .field(field)
@@ -1377,7 +1377,7 @@ fn field_element(
         arguments: Default::default(),
         directives: Default::default(),
         sibling_typename: None,
-    }))
+    })
 }
 
 const ADD_AT_PATH_TEST_SCHEMA: &str = r#"

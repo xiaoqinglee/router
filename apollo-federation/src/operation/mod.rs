@@ -662,17 +662,8 @@ mod field_selection {
         pub(crate) selection_set: Option<SelectionSet>,
     }
 
-    /// The non-selection-set data of `FieldSelection`, used with operation paths and graph
-    /// paths.
-    #[derive(Clone)]
-    pub(crate) struct Field {
-        data: FieldData,
-        key: SelectionKey,
-        sorted_arguments: Arc<Vec<Node<executable::Argument>>>,
-    }
-
     #[derive(Debug, Clone)]
-    pub(crate) struct FieldData {
+    pub(crate) struct Field {
         pub(crate) schema: ValidFederationSchema,
         pub(crate) field_position: FieldDefinitionPosition,
         pub(crate) alias: Option<Name>,
@@ -713,9 +704,9 @@ mod field_selection {
         }
 
         pub(crate) fn with_updated_alias(&self, alias: Name) -> Field {
-            let mut data = self.field.data().clone();
+            let mut data = self.field.clone();
             data.alias = Some(alias);
-            Field::new(data)
+            data
         }
 
         pub(crate) fn collect_variables<'selection>(
@@ -730,17 +721,11 @@ mod field_selection {
         }
     }
 
-    impl std::fmt::Debug for Field {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.data.fmt(f)
-        }
-    }
-
     impl PartialEq for Field {
         fn eq(&self, other: &Self) -> bool {
-            self.data.field_position.field_name() == other.data.field_position.field_name()
-                && self.key == other.key
-                && self.sorted_arguments == other.sorted_arguments
+            self.field_position.field_name() == other.field_position.field_name()
+                && self.key() == other.key()
+                && super::contains::same_arguments(&self.arguments, &other.arguments)
         }
     }
 
@@ -748,39 +733,14 @@ mod field_selection {
 
     impl Hash for Field {
         fn hash<H: Hasher>(&self, state: &mut H) {
-            self.data.field_position.field_name().hash(state);
-            self.key.hash(state);
-            self.sorted_arguments.hash(state);
-        }
-    }
-
-    impl Deref for Field {
-        type Target = FieldData;
-
-        fn deref(&self) -> &Self::Target {
-            &self.data
+            self.field_position.field_name().hash(state);
+            self.key().hash(state);
+            self.arguments.hash(state);
         }
     }
 
     impl Field {
-        pub(crate) fn new(data: FieldData) -> Self {
-            let mut arguments = data.arguments.as_ref().clone();
-            sort_arguments(&mut arguments);
-            Self {
-                key: data.key(),
-                sorted_arguments: Arc::new(arguments),
-                data,
-            }
-        }
-
         /// Create a trivial field selection without any arguments or directives.
-        pub(crate) fn from_position(
-            schema: &ValidFederationSchema,
-            field_position: FieldDefinitionPosition,
-        ) -> Self {
-            Self::new(FieldData::from_position(schema, field_position))
-        }
-
         // Note: The `schema` argument must be a subgraph schema, so the __typename field won't
         // need to be rebased, which would fail (since __typename fields are undefined).
         pub(crate) fn new_introspection_typename(
@@ -788,14 +748,14 @@ mod field_selection {
             parent_type: &CompositeTypeDefinitionPosition,
             alias: Option<Name>,
         ) -> Self {
-            Self::new(FieldData {
+            Self {
                 schema: schema.clone(),
                 field_position: parent_type.introspection_typename_field(),
                 alias,
                 arguments: Default::default(),
                 directives: Default::default(),
                 sibling_typename: None,
-            })
+            }
         }
 
         /// Turn this `Field` into a `FieldSelection` with the given sub-selection. If this is
@@ -806,7 +766,7 @@ mod field_selection {
         ) -> FieldSelection {
             if cfg!(debug_assertions) {
                 if let Some(ref selection_set) = selection_set {
-                    if let Ok(field_type) = self.data.output_base_type() {
+                    if let Ok(field_type) = self.output_base_type() {
                         if let Ok(field_type_position) =
                             CompositeTypeDefinitionPosition::try_from(field_type)
                         {
@@ -841,32 +801,28 @@ mod field_selection {
         }
 
         pub(crate) fn schema(&self) -> &ValidFederationSchema {
-            &self.data.schema
-        }
-
-        pub(crate) fn data(&self) -> &FieldData {
-            &self.data
+            &self.schema
         }
 
         pub(super) fn directives_mut(&mut self) -> &mut executable::DirectiveList {
-            &mut self.data.directives
+            &mut self.directives
         }
 
         pub(crate) fn sibling_typename(&self) -> Option<&SiblingTypename> {
-            self.data.sibling_typename.as_ref()
+            self.sibling_typename.as_ref()
         }
 
         pub(crate) fn sibling_typename_mut(&mut self) -> &mut Option<SiblingTypename> {
-            &mut self.data.sibling_typename
+            &mut self.sibling_typename
         }
 
         pub(crate) fn with_updated_directives(
             &self,
             directives: executable::DirectiveList,
         ) -> Field {
-            let mut data = self.data.clone();
+            let mut data = self.clone();
             data.directives = directives;
-            Self::new(data)
+            data
         }
 
         pub(crate) fn as_path_element(&self) -> FetchDataPathElement {
@@ -904,12 +860,6 @@ mod field_selection {
         }
     }
 
-    impl HasSelectionKey for Field {
-        fn key(&self) -> SelectionKey {
-            self.key.clone()
-        }
-    }
-
     // SiblingTypename indicates how the sibling __typename field should be restored.
     // PORT_NOTE: The JS version used the empty string to indicate unaliased sibling typenames.
     // Here we use an enum to make the distinction explicit.
@@ -928,7 +878,7 @@ mod field_selection {
         }
     }
 
-    impl FieldData {
+    impl Field {
         /// Create a trivial field selection without any arguments or directives.
         pub fn from_position(
             schema: &ValidFederationSchema,
@@ -971,7 +921,7 @@ mod field_selection {
         }
     }
 
-    impl HasSelectionKey for FieldData {
+    impl HasSelectionKey for Field {
         fn key(&self) -> SelectionKey {
             let mut directives = self.directives.clone();
             sort_directives(&mut directives);
@@ -984,16 +934,13 @@ mod field_selection {
 }
 
 pub(crate) use field_selection::Field;
-pub(crate) use field_selection::FieldData;
 pub(crate) use field_selection::FieldSelection;
 pub(crate) use field_selection::SiblingTypename;
 
 mod fragment_spread_selection {
-    use std::ops::Deref;
-    use std::sync::Arc;
-
     use apollo_compiler::executable;
     use apollo_compiler::Name;
+    use apollo_compiler::Node;
 
     use crate::operation::is_deferred_selection;
     use crate::operation::sort_directives;
@@ -1004,6 +951,8 @@ mod fragment_spread_selection {
     use crate::schema::position::CompositeTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
 
+    use super::Fragment;
+
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) struct FragmentSpreadSelection {
         pub(crate) spread: FragmentSpread,
@@ -1013,14 +962,8 @@ mod fragment_spread_selection {
     /// An analogue of the apollo-compiler type `FragmentSpread` with these changes:
     /// - Stores the schema (may be useful for directives).
     /// - Encloses collection types in `Arc`s to facilitate cheaper cloning.
-    #[derive(Clone)]
-    pub(crate) struct FragmentSpread {
-        data: FragmentSpreadData,
-        key: SelectionKey,
-    }
-
     #[derive(Debug, Clone)]
-    pub(crate) struct FragmentSpreadData {
+    pub(crate) struct FragmentSpread {
         pub(crate) schema: ValidFederationSchema,
         pub(crate) fragment_name: Name,
         pub(crate) type_condition_position: CompositeTypeDefinitionPosition,
@@ -1041,52 +984,31 @@ mod fragment_spread_selection {
         }
     }
 
-    impl std::fmt::Debug for FragmentSpread {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.data.fmt(f)
-        }
-    }
-
     impl PartialEq for FragmentSpread {
         fn eq(&self, other: &Self) -> bool {
-            self.key == other.key
+            self.key() == other.key()
         }
     }
 
     impl Eq for FragmentSpread {}
 
-    impl Deref for FragmentSpread {
-        type Target = FragmentSpreadData;
-
-        fn deref(&self) -> &Self::Target {
-            &self.data
-        }
-    }
-
     impl FragmentSpread {
-        pub(crate) fn new(data: FragmentSpreadData) -> Self {
-            Self {
-                key: data.key(),
-                data,
+        pub(crate) fn from_fragment(
+            fragment: &Node<Fragment>,
+            spread_directives: executable::DirectiveList,
+        ) -> FragmentSpread {
+            FragmentSpread {
+                schema: fragment.schema.clone(),
+                fragment_name: fragment.name.clone(),
+                type_condition_position: fragment.type_condition_position.clone(),
+                directives: spread_directives,
+                fragment_directives: fragment.directives.clone(),
+                selection_id: SelectionId::new(),
             }
-        }
-
-        pub(crate) fn data(&self) -> &FragmentSpreadData {
-            &self.data
-        }
-
-        pub(super) fn directives_mut(&mut self) -> &mut executable::DirectiveList {
-            &mut self.data.directives
         }
     }
 
     impl HasSelectionKey for FragmentSpread {
-        fn key(&self) -> SelectionKey {
-            self.key.clone()
-        }
-    }
-
-    impl HasSelectionKey for FragmentSpreadData {
         fn key(&self) -> SelectionKey {
             if is_deferred_selection(&self.directives) {
                 SelectionKey::Defer {
@@ -1105,7 +1027,6 @@ mod fragment_spread_selection {
 }
 
 pub(crate) use fragment_spread_selection::FragmentSpread;
-pub(crate) use fragment_spread_selection::FragmentSpreadData;
 pub(crate) use fragment_spread_selection::FragmentSpreadSelection;
 
 impl FragmentSpreadSelection {
@@ -1115,10 +1036,10 @@ impl FragmentSpreadSelection {
 
     /// Copies fragment spread selection and assigns it a new unique selection ID.
     pub(crate) fn with_unique_id(&self) -> Self {
-        let mut data = self.spread.data().clone();
-        data.selection_id = SelectionId::new();
+        let mut spread = self.spread.clone();
+        spread.selection_id = SelectionId::new();
         Self {
-            spread: FragmentSpread::new(data),
+            spread,
             selection_set: self.selection_set.clone(),
         }
     }
@@ -1132,10 +1053,8 @@ impl FragmentSpreadSelection {
         fragment_spread: &executable::FragmentSpread,
         fragment: &Node<Fragment>,
     ) -> Result<FragmentSpreadSelection, FederationError> {
-        let spread_data =
-            FragmentSpreadData::from_fragment(fragment, fragment_spread.directives.clone());
         Ok(FragmentSpreadSelection {
-            spread: FragmentSpread::new(spread_data),
+            spread: FragmentSpread::from_fragment(fragment, fragment_spread.directives.clone()),
             selection_set: fragment.selection_set.clone(),
         })
     }
@@ -1144,9 +1063,8 @@ impl FragmentSpreadSelection {
         fragment: &Node<Fragment>,
         directives: executable::DirectiveList,
     ) -> Self {
-        let spread_data = FragmentSpreadData::from_fragment(fragment, directives);
         Self {
-            spread: FragmentSpread::new(spread_data),
+            spread: FragmentSpread::from_fragment(fragment, directives),
             selection_set: fragment.selection_set.clone(),
         }
     }
@@ -1173,13 +1091,13 @@ impl FragmentSpreadSelection {
         parent_type_position: CompositeTypeDefinitionPosition,
         predicate: &mut impl FnMut(OpPathElement) -> Result<bool, FederationError>,
     ) -> Result<bool, FederationError> {
-        let inline_fragment = InlineFragment::new(InlineFragmentData {
+        let inline_fragment = InlineFragment {
             schema: self.spread.schema.clone(),
             parent_type_position,
             type_condition_position: Some(self.spread.type_condition_position.clone()),
             directives: self.spread.directives.clone(),
             selection_id: self.spread.selection_id.clone(),
-        });
+        };
         if predicate(inline_fragment.into())? {
             return Ok(true);
         }
@@ -1191,31 +1109,15 @@ impl FragmentSpreadSelection {
         parent_type_position: CompositeTypeDefinitionPosition,
         callback: &mut impl FnMut(OpPathElement) -> Result<(), FederationError>,
     ) -> Result<(), FederationError> {
-        let inline_fragment = InlineFragment::new(InlineFragmentData {
+        let inline_fragment = InlineFragment {
             schema: self.spread.schema.clone(),
             parent_type_position,
             type_condition_position: Some(self.spread.type_condition_position.clone()),
             directives: self.spread.directives.clone(),
             selection_id: self.spread.selection_id.clone(),
-        });
+        };
         callback(inline_fragment.into())?;
         self.selection_set.for_each_element(callback)
-    }
-}
-
-impl FragmentSpreadData {
-    pub(crate) fn from_fragment(
-        fragment: &Node<Fragment>,
-        spread_directives: executable::DirectiveList,
-    ) -> FragmentSpreadData {
-        FragmentSpreadData {
-            schema: fragment.schema.clone(),
-            fragment_name: fragment.name.clone(),
-            type_condition_position: fragment.type_condition_position.clone(),
-            directives: spread_directives,
-            fragment_directives: fragment.directives.clone(),
-            selection_id: SelectionId::new(),
-        }
     }
 }
 
@@ -1223,7 +1125,6 @@ mod inline_fragment_selection {
     use std::collections::HashSet;
     use std::hash::Hash;
     use std::hash::Hasher;
-    use std::ops::Deref;
     use std::sync::Arc;
 
     use apollo_compiler::executable;
@@ -1259,14 +1160,8 @@ mod inline_fragment_selection {
 
     /// The non-selection-set data of `InlineFragmentSelection`, used with operation paths and
     /// graph paths.
-    #[derive(Clone)]
-    pub(crate) struct InlineFragment {
-        data: InlineFragmentData,
-        key: SelectionKey,
-    }
-
     #[derive(Debug, Clone)]
-    pub(crate) struct InlineFragmentData {
+    pub(crate) struct InlineFragment {
         pub(crate) schema: ValidFederationSchema,
         pub(crate) parent_type_position: CompositeTypeDefinitionPosition,
         pub(crate) type_condition_position: Option<CompositeTypeDefinitionPosition>,
@@ -1307,15 +1202,9 @@ mod inline_fragment_selection {
         }
     }
 
-    impl std::fmt::Debug for InlineFragment {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.data.fmt(f)
-        }
-    }
-
     impl PartialEq for InlineFragment {
         fn eq(&self, other: &Self) -> bool {
-            self.key == other.key
+            self.key() == other.key()
         }
     }
 
@@ -1323,53 +1212,34 @@ mod inline_fragment_selection {
 
     impl Hash for InlineFragment {
         fn hash<H: Hasher>(&self, state: &mut H) {
-            self.key.hash(state);
-        }
-    }
-
-    impl Deref for InlineFragment {
-        type Target = InlineFragmentData;
-
-        fn deref(&self) -> &Self::Target {
-            &self.data
+            self.key().hash(state);
         }
     }
 
     impl InlineFragment {
-        pub(crate) fn new(data: InlineFragmentData) -> Self {
-            Self {
-                key: data.key(),
-                data,
-            }
-        }
-
         pub(crate) fn schema(&self) -> &ValidFederationSchema {
-            &self.data.schema
-        }
-
-        pub(crate) fn data(&self) -> &InlineFragmentData {
-            &self.data
+            &self.schema
         }
 
         pub(super) fn directives_mut(&mut self) -> &mut executable::DirectiveList {
-            &mut self.data.directives
+            &mut self.directives
         }
 
         pub(crate) fn with_updated_type_condition(
             &self,
             new: Option<CompositeTypeDefinitionPosition>,
         ) -> Self {
-            let mut data = self.data().clone();
-            data.type_condition_position = new;
-            Self::new(data)
+            let mut frag = self.clone();
+            frag.type_condition_position = new;
+            frag
         }
         pub(crate) fn with_updated_directives(
             &self,
             directives: executable::DirectiveList,
         ) -> InlineFragment {
-            let mut data = self.data().clone();
-            data.directives = directives;
-            Self::new(data)
+            let mut frag = self.clone();
+            frag.directives = directives;
+            frag
         }
 
         pub(crate) fn as_path_element(&self) -> Option<FetchDataPathElement> {
@@ -1384,19 +1254,13 @@ mod inline_fragment_selection {
             &'selection self,
             variables: &mut HashSet<&'selection Name>,
         ) {
-            for dir in self.data.directives.iter() {
+            for dir in &self.directives {
                 collect_variables_from_directive(dir, variables)
             }
         }
     }
 
-    impl HasSelectionKey for InlineFragment {
-        fn key(&self) -> SelectionKey {
-            self.key.clone()
-        }
-    }
-
-    impl InlineFragmentData {
+    impl InlineFragment {
         pub(crate) fn defer_directive_arguments(
             &self,
         ) -> Result<Option<DeferDirectiveArguments>, FederationError> {
@@ -1414,7 +1278,7 @@ mod inline_fragment_selection {
         }
     }
 
-    impl HasSelectionKey for InlineFragmentData {
+    impl HasSelectionKey for InlineFragment {
         fn key(&self) -> SelectionKey {
             if is_deferred_selection(&self.directives) {
                 SelectionKey::Defer {
@@ -1436,7 +1300,6 @@ mod inline_fragment_selection {
 }
 
 pub(crate) use inline_fragment_selection::InlineFragment;
-pub(crate) use inline_fragment_selection::InlineFragmentData;
 pub(crate) use inline_fragment_selection::InlineFragmentSelection;
 
 use crate::schema::position::INTROSPECTION_TYPENAME_FIELD_NAME;
@@ -3002,7 +2865,7 @@ fn gen_alias_name(base_name: &Name, unavailable_names: &HashMap<Name, SeenRespon
     }
 }
 
-impl FieldData {
+impl Field {
     fn with_updated_position(
         &self,
         schema: ValidFederationSchema,
@@ -3047,14 +2910,14 @@ impl FieldSelection {
         .is_ok();
 
         Ok(Some(FieldSelection {
-            field: Field::new(FieldData {
+            field: Field {
                 schema: schema.clone(),
                 field_position,
                 alias: field.alias.clone(),
                 arguments: Arc::new(field.arguments.clone()),
                 directives: field.directives.clone(),
                 sibling_typename: None,
-            }),
+            },
             selection_set: if is_composite {
                 Some(SelectionSet::from_selection_set(
                     &field.selection_set,
@@ -3067,9 +2930,9 @@ impl FieldSelection {
         }))
     }
 
-    fn with_updated_element(&self, element: FieldData) -> Self {
+    fn with_updated_element(&self, element: Field) -> Self {
         Self {
-            field: Field::new(element),
+            field: element,
             ..self.clone()
         }
     }
@@ -3234,10 +3097,10 @@ impl InlineFragmentSelection {
 
     /// Copies inline fragment selection and assigns it a new unique selection ID.
     pub(crate) fn with_unique_id(&self) -> Self {
-        let mut data = self.inline_fragment.data().clone();
-        data.selection_id = SelectionId::new();
+        let mut inline_fragment = self.inline_fragment.clone();
+        inline_fragment.selection_id = SelectionId::new();
         Self {
-            inline_fragment: InlineFragment::new(data),
+            inline_fragment,
             selection_set: self.selection_set.clone(),
         }
     }
@@ -3263,13 +3126,13 @@ impl InlineFragmentSelection {
             };
         let new_selection_set =
             SelectionSet::from_selection_set(&inline_fragment.selection_set, fragments, schema)?;
-        let new_inline_fragment = InlineFragment::new(InlineFragmentData {
+        let new_inline_fragment = InlineFragment {
             schema: schema.clone(),
             parent_type_position: parent_type_position.clone(),
             type_condition_position,
             directives: inline_fragment.directives.clone(),
             selection_id: SelectionId::new(),
-        });
+        };
         Ok(InlineFragmentSelection::new(
             new_inline_fragment,
             new_selection_set,
@@ -3283,7 +3146,7 @@ impl InlineFragmentSelection {
         // Note: We assume that fragment_spread_selection.spread.type_condition_position is the same as
         //       fragment_spread_selection.selection_set.type_position.
         Ok(InlineFragmentSelection::new(
-            InlineFragment::new(InlineFragmentData {
+            InlineFragment {
                 schema: fragment_spread_selection.spread.schema.clone(),
                 parent_type_position,
                 type_condition_position: Some(
@@ -3294,7 +3157,7 @@ impl InlineFragmentSelection {
                 ),
                 directives: fragment_spread_selection.spread.directives.clone(),
                 selection_id: SelectionId::new(),
-            }),
+            },
             fragment_spread_selection
                 .selection_set
                 .expand_all_fragments()?,
@@ -3308,14 +3171,14 @@ impl InlineFragmentSelection {
         selection_set: SelectionSet,
         directives: executable::DirectiveList,
     ) -> Self {
-        let inline_fragment_data = InlineFragmentData {
+        let inline_fragment_data = InlineFragment {
             schema: selection_set.schema.clone(),
             parent_type_position,
             type_condition_position: selection_set.type_position.clone().into(),
             directives,
             selection_id: SelectionId::new(),
         };
-        InlineFragmentSelection::new(InlineFragment::new(inline_fragment_data), selection_set)
+        InlineFragmentSelection::new(inline_fragment_data, selection_set)
     }
 
     pub(crate) fn casted_type(&self) -> &CompositeTypeDefinitionPosition {

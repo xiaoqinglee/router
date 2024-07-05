@@ -135,7 +135,7 @@ fn compare_sorted_name_value_pairs<'doc>(
 /// Returns true if two argument lists are equivalent.
 ///
 /// The arguments and values must be the same, independent of order.
-fn same_arguments(
+pub(super) fn same_arguments(
     left: &[Node<executable::Argument>],
     right: &[Node<executable::Argument>],
 ) -> bool {

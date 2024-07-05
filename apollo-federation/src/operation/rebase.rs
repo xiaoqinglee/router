@@ -11,10 +11,8 @@ use super::Field;
 use super::FieldSelection;
 use super::Fragment;
 use super::FragmentSpread;
-use super::FragmentSpreadData;
 use super::FragmentSpreadSelection;
 use super::InlineFragment;
-use super::InlineFragmentData;
 use super::InlineFragmentSelection;
 use super::NamedFragments;
 use super::OperationElement;
@@ -189,10 +187,10 @@ impl Field {
                 }
                 .into())
             } else {
-                let mut updated_field_data = self.data().clone();
+                let mut updated_field_data = self.clone();
                 updated_field_data.schema = schema.clone();
                 updated_field_data.field_position = parent_type.introspection_typename_field();
-                Ok(Field::new(updated_field_data))
+                Ok(updated_field_data)
             };
         }
 
@@ -200,10 +198,10 @@ impl Field {
         return if field_from_parent.try_get(schema.schema()).is_some()
             && self.can_rebase_on(parent_type)?
         {
-            let mut updated_field_data = self.data().clone();
+            let mut updated_field_data = self.clone();
             updated_field_data.schema = schema.clone();
             updated_field_data.field_position = field_from_parent;
-            Ok(Field::new(updated_field_data))
+            Ok(updated_field_data)
         } else {
             Err(RebaseError::CannotRebase {
                 field_position: self.field_position.clone(),
@@ -402,10 +400,10 @@ impl FragmentSpread {
             &named_fragment.type_condition_position,
             &self.schema,
         ) {
-            Ok(FragmentSpread::new(FragmentSpreadData::from_fragment(
+            Ok(FragmentSpread::from_fragment(
                 &named_fragment,
                 self.directives.clone(),
-            )))
+            ))
         } else {
             Err(RebaseError::NonIntersectingCondition {
                 type_condition: named_fragment.type_condition_position.clone().into(),
@@ -486,23 +484,20 @@ impl FragmentSpreadSelection {
                 Err(RebaseError::EmptySelectionSet.into())
             } else {
                 Ok(InlineFragmentSelection::new(
-                    InlineFragment::new(InlineFragmentData {
+                    InlineFragment {
                         schema: schema.clone(),
                         parent_type_position: parent_type.clone(),
                         type_condition_position: None,
                         directives: Default::default(),
                         selection_id: SelectionId::new(),
-                    }),
+                    },
                     expanded_selection_set,
                 )
                 .into())
             };
         }
 
-        let spread = FragmentSpread::new(FragmentSpreadData::from_fragment(
-            &named_fragment,
-            self.spread.directives.clone(),
-        ));
+        let spread = FragmentSpread::from_fragment(&named_fragment, self.spread.directives.clone());
         Ok(FragmentSpreadSelection {
             spread,
             selection_set: named_fragment.selection_set.clone(),
@@ -520,7 +515,7 @@ impl FragmentSpreadSelection {
     }
 }
 
-impl InlineFragmentData {
+impl InlineFragment {
     fn casted_type_if_add_to(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
@@ -529,14 +524,16 @@ impl InlineFragmentData {
         if self.schema == *schema && self.parent_type_position == *parent_type {
             return Some(self.casted_type());
         }
-        match self.can_rebase_on(parent_type, schema) {
+        match self.can_rebase_type_condition_on(parent_type, schema) {
             (false, _) => None,
             (true, None) => Some(parent_type.clone()),
             (true, Some(ty)) => Some(ty),
         }
     }
 
-    fn can_rebase_on(
+    // PORT_NOTE: In JS this is a separate FragmentElement::rebaseOn. Rust doesn't have that
+    // distinction.
+    fn can_rebase_type_condition_on(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
         schema: &ValidFederationSchema,
@@ -578,10 +575,10 @@ impl InlineFragment {
             }
             .into())
         } else {
-            let mut rebased_fragment_data = self.data().clone();
+            let mut rebased_fragment_data = self.clone();
             rebased_fragment_data.type_condition_position = rebased_condition;
             rebased_fragment_data.schema = schema.clone();
-            Ok(InlineFragment::new(rebased_fragment_data))
+            Ok(rebased_fragment_data)
         }
     }
 
