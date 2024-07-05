@@ -662,6 +662,25 @@ mod field_selection {
         pub(crate) selection_set: Option<SelectionSet>,
     }
 
+    /// The non-selection-set data of `FieldSelection`, used with operation paths and graph
+    /// paths.
+    #[derive(Clone)]
+    pub(crate) struct Field {
+        data: FieldData,
+        key: SelectionKey,
+        sorted_arguments: Arc<Vec<Node<executable::Argument>>>,
+    }
+
+    #[derive(Debug, Clone)]
+    pub(crate) struct FieldData {
+        pub(crate) schema: ValidFederationSchema,
+        pub(crate) field_position: FieldDefinitionPosition,
+        pub(crate) alias: Option<Name>,
+        pub(crate) arguments: Arc<Vec<Node<executable::Argument>>>,
+        pub(crate) directives: executable::DirectiveList,
+        pub(crate) sibling_typename: Option<SiblingTypename>,
+    }
+
     impl HasSelectionKey for FieldSelection {
         fn key(&self) -> SelectionKey {
             self.field.key()
@@ -709,15 +728,6 @@ mod field_selection {
             }
             Ok(())
         }
-    }
-
-    /// The non-selection-set data of `FieldSelection`, used with operation paths and graph
-    /// paths.
-    #[derive(Clone)]
-    pub(crate) struct Field {
-        data: FieldData,
-        key: SelectionKey,
-        sorted_arguments: Arc<Vec<Node<executable::Argument>>>,
     }
 
     impl std::fmt::Debug for Field {
@@ -918,16 +928,6 @@ mod field_selection {
         }
     }
 
-    #[derive(Debug, Clone)]
-    pub(crate) struct FieldData {
-        pub(crate) schema: ValidFederationSchema,
-        pub(crate) field_position: FieldDefinitionPosition,
-        pub(crate) alias: Option<Name>,
-        pub(crate) arguments: Arc<Vec<Node<executable::Argument>>>,
-        pub(crate) directives: executable::DirectiveList,
-        pub(crate) sibling_typename: Option<SiblingTypename>,
-    }
-
     impl FieldData {
         /// Create a trivial field selection without any arguments or directives.
         pub fn from_position(
@@ -1010,12 +1010,6 @@ mod fragment_spread_selection {
         pub(crate) selection_set: SelectionSet,
     }
 
-    impl HasSelectionKey for FragmentSpreadSelection {
-        fn key(&self) -> SelectionKey {
-            self.spread.key()
-        }
-    }
-
     /// An analogue of the apollo-compiler type `FragmentSpread` with these changes:
     /// - Stores the schema (may be useful for directives).
     /// - Encloses collection types in `Arc`s to facilitate cheaper cloning.
@@ -1023,6 +1017,28 @@ mod fragment_spread_selection {
     pub(crate) struct FragmentSpread {
         data: FragmentSpreadData,
         key: SelectionKey,
+    }
+
+    #[derive(Debug, Clone)]
+    pub(crate) struct FragmentSpreadData {
+        pub(crate) schema: ValidFederationSchema,
+        pub(crate) fragment_name: Name,
+        pub(crate) type_condition_position: CompositeTypeDefinitionPosition,
+        // directives applied on the fragment spread selection
+        pub(crate) directives: executable::DirectiveList,
+        // directives applied within the fragment definition
+        //
+        // PORT_NOTE: The JS codebase combined the fragment spread's directives with the fragment
+        // definition's directives. This was invalid GraphQL as those directives may not be applicable
+        // on different locations. While we now keep track of those references, they are currently ignored.
+        pub(crate) fragment_directives: executable::DirectiveList,
+        pub(crate) selection_id: SelectionId,
+    }
+
+    impl HasSelectionKey for FragmentSpreadSelection {
+        fn key(&self) -> SelectionKey {
+            self.spread.key()
+        }
     }
 
     impl std::fmt::Debug for FragmentSpread {
@@ -1068,22 +1084,6 @@ mod fragment_spread_selection {
         fn key(&self) -> SelectionKey {
             self.key.clone()
         }
-    }
-
-    #[derive(Debug, Clone)]
-    pub(crate) struct FragmentSpreadData {
-        pub(crate) schema: ValidFederationSchema,
-        pub(crate) fragment_name: Name,
-        pub(crate) type_condition_position: CompositeTypeDefinitionPosition,
-        // directives applied on the fragment spread selection
-        pub(crate) directives: executable::DirectiveList,
-        // directives applied within the fragment definition
-        //
-        // PORT_NOTE: The JS codebase combined the fragment spread's directives with the fragment
-        // definition's directives. This was invalid GraphQL as those directives may not be applicable
-        // on different locations. While we now keep track of those references, they are currently ignored.
-        pub(crate) fragment_directives: executable::DirectiveList,
-        pub(crate) selection_id: SelectionId,
     }
 
     impl HasSelectionKey for FragmentSpreadData {
@@ -1257,6 +1257,23 @@ mod inline_fragment_selection {
         pub(crate) selection_set: SelectionSet,
     }
 
+    /// The non-selection-set data of `InlineFragmentSelection`, used with operation paths and
+    /// graph paths.
+    #[derive(Clone)]
+    pub(crate) struct InlineFragment {
+        data: InlineFragmentData,
+        key: SelectionKey,
+    }
+
+    #[derive(Debug, Clone)]
+    pub(crate) struct InlineFragmentData {
+        pub(crate) schema: ValidFederationSchema,
+        pub(crate) parent_type_position: CompositeTypeDefinitionPosition,
+        pub(crate) type_condition_position: Option<CompositeTypeDefinitionPosition>,
+        pub(crate) directives: executable::DirectiveList,
+        pub(crate) selection_id: SelectionId,
+    }
+
     impl InlineFragmentSelection {
         pub(crate) fn with_updated_selection_set(&self, selection_set: SelectionSet) -> Self {
             Self {
@@ -1288,14 +1305,6 @@ mod inline_fragment_selection {
         fn key(&self) -> SelectionKey {
             self.inline_fragment.key()
         }
-    }
-
-    /// The non-selection-set data of `InlineFragmentSelection`, used with operation paths and
-    /// graph paths.
-    #[derive(Clone)]
-    pub(crate) struct InlineFragment {
-        data: InlineFragmentData,
-        key: SelectionKey,
     }
 
     impl std::fmt::Debug for InlineFragment {
@@ -1385,15 +1394,6 @@ mod inline_fragment_selection {
         fn key(&self) -> SelectionKey {
             self.key.clone()
         }
-    }
-
-    #[derive(Debug, Clone)]
-    pub(crate) struct InlineFragmentData {
-        pub(crate) schema: ValidFederationSchema,
-        pub(crate) parent_type_position: CompositeTypeDefinitionPosition,
-        pub(crate) type_condition_position: Option<CompositeTypeDefinitionPosition>,
-        pub(crate) directives: executable::DirectiveList,
-        pub(crate) selection_id: SelectionId,
     }
 
     impl InlineFragmentData {
