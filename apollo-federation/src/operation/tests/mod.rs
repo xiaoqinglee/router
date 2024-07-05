@@ -57,7 +57,7 @@ pub(super) fn parse_operation(schema: &ValidFederationSchema, query: &str) -> Op
         root_kind: operation.operation_type.into(),
         name: operation.name.clone(),
         variables: Arc::new(operation.variables.clone()),
-        directives: Arc::new(operation.directives.clone()),
+        directives: operation.directives.clone(),
         selection_set,
         named_fragments,
     }

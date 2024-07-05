@@ -464,7 +464,7 @@ mod tests {
                 field_position: field_def.clone(),
                 alias: None,
                 arguments: Arc::new(Vec::new()),
-                directives: Arc::new(DirectiveList::new()),
+                directives: Default::default(),
                 sibling_typename: None,
             };
             let trigger = OpGraphPathTrigger::OpPathElement(OpPathElement::Field(Field::new(data)));

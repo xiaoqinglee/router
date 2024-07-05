@@ -736,7 +736,7 @@ enum FullMatchingFragmentCondition<'a> {
     ForInlineFragmentSelection {
         // the type condition and directives on an inline fragment selection.
         type_condition_position: &'a CompositeTypeDefinitionPosition,
-        directives: &'a Arc<executable::DirectiveList>,
+        directives: &'a executable::DirectiveList,
     },
 }
 
@@ -954,7 +954,7 @@ impl SelectionSet {
             //            not have "sourceType" field for `FragmentSpreadSelection`.
             let fragment_selection = FragmentSpreadSelection::from_fragment(
                 &fragment,
-                /*directives*/ &Default::default(),
+                /*directives*/ Default::default(),
             );
             optimized.add_local_selection(&fragment_selection.into())?;
         }
@@ -1269,7 +1269,7 @@ impl FieldSelection {
             SelectionSetOrFragment::Fragment(fragment) => {
                 let fragment_selection = FragmentSpreadSelection::from_fragment(
                     &fragment,
-                    /*directives*/ &Default::default(),
+                    /*directives*/ Default::default(),
                 );
                 optimized =
                     SelectionSet::from_selection(base_composite_type, fragment_selection.into());
@@ -1346,7 +1346,7 @@ impl InlineFragmentSelection {
                             .cloned()
                             .collect();
                         return Ok(
-                            FragmentSpreadSelection::from_fragment(&fragment, &directives).into(),
+                            FragmentSpreadSelection::from_fragment(&fragment, directives).into(),
                         );
                     } else {
                         // Otherwise, we keep this element and use a sub-selection with just the spread.
@@ -1355,7 +1355,7 @@ impl InlineFragmentSelection {
                             type_condition_position.clone(),
                             FragmentSpreadSelection::from_fragment(
                                 &fragment,
-                                /*directives*/ &Default::default(),
+                                /*directives*/ Default::default(),
                             )
                             .into(),
                         );

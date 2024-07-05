@@ -404,7 +404,7 @@ impl FragmentSpread {
         ) {
             Ok(FragmentSpread::new(FragmentSpreadData::from_fragment(
                 &named_fragment,
-                &self.directives,
+                self.directives.clone(),
             )))
         } else {
             Err(RebaseError::NonIntersectingCondition {
@@ -501,7 +501,7 @@ impl FragmentSpreadSelection {
 
         let spread = FragmentSpread::new(FragmentSpreadData::from_fragment(
             &named_fragment,
-            &self.spread.directives,
+            self.spread.directives.clone(),
         ));
         Ok(FragmentSpreadSelection {
             spread,

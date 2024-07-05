@@ -295,7 +295,7 @@ impl HasSelectionKey for OpPathElement {
 }
 
 impl OpPathElement {
-    pub(crate) fn directives(&self) -> &Arc<DirectiveList> {
+    pub(crate) fn directives(&self) -> &DirectiveList {
         match self {
             OpPathElement::Field(field) => &field.directives,
             OpPathElement::InlineFragment(inline_fragment) => &inline_fragment.directives,
@@ -3731,7 +3731,7 @@ mod tests {
             field_position: FieldDefinitionPosition::Object(pos),
             alias: None,
             arguments: Arc::new(Vec::new()),
-            directives: Arc::new(DirectiveList::new()),
+            directives: Default::default(),
             sibling_typename: None,
         };
         let trigger = OpGraphPathTrigger::OpPathElement(OpPathElement::Field(Field::new(data)));
@@ -3756,7 +3756,7 @@ mod tests {
             field_position: FieldDefinitionPosition::Object(pos),
             alias: None,
             arguments: Arc::new(Vec::new()),
-            directives: Arc::new(DirectiveList::new()),
+            directives: Default::default(),
             sibling_typename: None,
         };
         let trigger = OpGraphPathTrigger::OpPathElement(OpPathElement::Field(Field::new(data)));

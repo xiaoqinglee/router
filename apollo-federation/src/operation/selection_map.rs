@@ -465,7 +465,7 @@ impl<'a> SelectionValue<'a> {
         }
     }
 
-    pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
+    pub(super) fn get_directives_mut(&mut self) -> &mut executable::DirectiveList {
         match self {
             Self::Field(field) => field.get_directives_mut(),
             Self::FragmentSpread(spread) => spread.get_directives_mut(),
@@ -498,7 +498,7 @@ impl<'a> FieldSelectionValue<'a> {
         Arc::make_mut(self.0).field.sibling_typename_mut()
     }
 
-    pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
+    pub(super) fn get_directives_mut(&mut self) -> &mut executable::DirectiveList {
         Arc::make_mut(self.0).field.directives_mut()
     }
 
@@ -515,7 +515,7 @@ impl<'a> FragmentSpreadSelectionValue<'a> {
         Self(fragment_spread_selection)
     }
 
-    pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
+    pub(super) fn get_directives_mut(&mut self) -> &mut executable::DirectiveList {
         Arc::make_mut(self.0).spread.directives_mut()
     }
 
@@ -540,7 +540,7 @@ impl<'a> InlineFragmentSelectionValue<'a> {
         self.0
     }
 
-    pub(super) fn get_directives_mut(&mut self) -> &mut Arc<executable::DirectiveList> {
+    pub(super) fn get_directives_mut(&mut self) -> &mut executable::DirectiveList {
         Arc::make_mut(self.0).inline_fragment.directives_mut()
     }
 
