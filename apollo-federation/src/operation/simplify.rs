@@ -481,3 +481,83 @@ impl SelectionSet {
         Ok(normalized_selections)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::operation::Operation;
+    use crate::schema::ValidFederationSchema;
+
+    #[test]
+    fn unsatisfiable_branches_removal() {
+        let schema = ValidFederationSchema::parse(
+            r#"
+            type Query {
+              i: I
+              j: J
+            }
+
+            interface I {
+              a: Int
+              b: Int
+            }
+
+            interface J {
+              b: Int
+            }
+
+            type T1 implements I & J {
+              a: Int
+              b: Int
+              c: Int
+            }
+
+            type T2 implements I {
+              a: Int
+              b: Int
+              d: Int
+            }
+
+            type T3 implements J {
+              a: Int
+              b: Int
+              d: Int
+            }
+        "#,
+        )
+        .unwrap();
+
+        let flatten = |op: &str| {
+            let op = Operation::parse(schema.clone(), op, "operation.graphql", None).unwrap();
+            op.selection_set
+                .flatten_unnecessary_fragments(
+                    &op.selection_set.type_position,
+                    &op.named_fragments,
+                    &schema,
+                )
+                .unwrap()
+                .to_string()
+        };
+
+        let identity = |op: &str| flatten(op) == op;
+
+        // is identity if there is no unsatisfiable branches
+        assert!(identity("{ i { a } }"));
+        assert!(identity("{ i { ... on T1 { a b c } } }"),);
+
+        // removes unsatisfiable branches
+        assert_eq!(flatten("{ i { ... on I { a } } }"), r#"{ i { a } }"#);
+        assert_eq!(
+            flatten("{ i { ... on T1 { ... on I { a b } } } }"),
+            r#"{ i { ... on T1 { a b } } }"#
+        );
+        assert_eq!(
+            flatten("{ i { ... on I { a ... on T2 { d } } } }"),
+            r#"{ i { a ... on T2 { d } } }"#
+        );
+        assert_eq!(
+            flatten("{ i { ... on T2 { ... on I { a ... on J { b } } } } }"),
+            r#"{ i { ... on T2 { a } } }"#
+        );
+    }
+}
