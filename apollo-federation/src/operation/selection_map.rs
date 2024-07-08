@@ -215,8 +215,6 @@ impl SelectionMap {
                     index += 1;
                 }
                 (merge_index, false) => {
-                    assert_ne!(index, merge_index);
-
                     match (&mut self.selections[merge_index], selection) {
                         (Selection::Field(old_field), Selection::Field(new_field)) => {
                             FieldSelectionValue::new(old_field)
