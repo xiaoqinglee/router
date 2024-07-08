@@ -196,7 +196,8 @@ impl SelectionMap {
             .zip(self.selections.iter_mut().map(SelectionValue::new))
     }
 
-    /// Merge in selections at the given index.
+    /// Merge in selections at the given index. New keys are inserted, in order, at `index`.
+    /// Selections with keys that are already in the map are merged into those existing selections.
     ///
     /// Returns an adjusted index: 1 past the final selection that this call added.
     fn merge_at(
@@ -243,7 +244,11 @@ impl SelectionMap {
 
     /// Handle selection replacement or merging after a mutation.
     ///
-    /// Note this does not work to *add* a selection to the map: both selections must already be in the map!
+    /// This function should be called when the selection is in the map, but its key, at the
+    /// correct index, is out of date.
+    /// If the mutated key is completely new, the old key is replaced by the new key.
+    /// If the mutated key collides with another key in the map, the mutated selection is removed
+    /// from the map, and merged into the other key's selection.
     ///
     /// `index` is the index where the mutation occurred.
     /// `selection_key` is the new selection key after mutation.
