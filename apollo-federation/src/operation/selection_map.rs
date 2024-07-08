@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use apollo_compiler::executable;
@@ -49,12 +50,13 @@ pub(crate) enum SelectionKey {
 }
 
 /// A sorted map of selections.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct SelectionMap {
     selections: Vec<Selection>,
     keys: IndexSet<SelectionKey>,
 }
 
+#[derive(Debug)]
 pub(crate) enum ModifySelection {
     /// Keep this selection.
     Keep,
@@ -207,7 +209,7 @@ impl SelectionMap {
             match self.keys.insert_full(key) {
                 (new_index, true) => {
                     // Move the key to the right place
-                    self.keys.swap_indices(index, new_index);
+                    self.keys.move_index(new_index, index);
                     // Insert the selection in the right place
                     self.selections.insert(index, selection);
                     index += 1;
@@ -215,7 +217,7 @@ impl SelectionMap {
                 (merge_index, false) => {
                     assert_ne!(index, merge_index);
 
-                    match dbg!(&mut self.selections[merge_index], selection) {
+                    match (&mut self.selections[merge_index], selection) {
                         (Selection::Field(old_field), Selection::Field(new_field)) => {
                             FieldSelectionValue::new(old_field)
                                 .merge_into(std::iter::once(&*new_field))?;
@@ -250,18 +252,21 @@ impl SelectionMap {
     fn handle_key_mutated(
         &mut self,
         index: usize,
-        selection_key: SelectionKey,
+        new_key: SelectionKey,
     ) -> Result<bool, FederationError> {
-        match self.keys.insert_full(selection_key) {
+        match self.keys.insert_full(new_key.clone()) {
             (new_index, true) => {
                 // Then move it into place.
-                self.keys.swap_indices(index, new_index);
+                self.keys.move_index(new_index, index);
                 // And remove the old key.
                 self.keys.pop();
                 Ok(true)
             }
             (mut merge_index, false) => {
-                assert_ne!(index, merge_index);
+                assert_ne!(
+                    index, merge_index,
+                    "handle_key_mutated called but key was the same"
+                );
 
                 // Remove the modified selection to merge it with the conflicting selection.
                 self.keys.shift_remove_index(index);
@@ -273,7 +278,15 @@ impl SelectionMap {
                     merge_index -= 1;
                 }
 
-                match dbg!(&mut self.selections[merge_index], modified_selection) {
+                let merge_selection = &mut self.selections[merge_index];
+                // If this fails there is a bug in the code above.
+                debug_assert_eq!(
+                    merge_selection.key(),
+                    modified_selection.key(),
+                    "merge target key must be the same"
+                );
+
+                match (merge_selection, modified_selection) {
                     (Selection::Field(old_field), Selection::Field(new_field)) => {
                         FieldSelectionValue::new(old_field)
                             .merge_into(std::iter::once(&*new_field))?;
@@ -299,17 +312,16 @@ impl SelectionMap {
         }
     }
 
-    /// Modify selections in the map. Modifications may change selection keys but not introduce
-    /// key conflicts.
+    /// Modify selections in the map.
     pub(crate) fn modify_selections(
         &mut self,
         mut modify: impl FnMut(&mut Selection) -> Result<ModifySelection, FederationError>,
     ) -> Result<(), FederationError> {
         let mut index = 0;
         while index < self.selections.len() {
-            //let mut entry = OccupiedEntry { map: self, index };
             let old_key = self.keys.get_index(index).unwrap().clone();
             let selection = &mut self.selections[index];
+
             match modify(selection)? {
                 ModifySelection::Keep => {
                     let new_key = selection.key();
@@ -386,6 +398,12 @@ impl SelectionMap {
         }
 
         Ok(())
+    }
+}
+
+impl Debug for SelectionMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
     }
 }
 
