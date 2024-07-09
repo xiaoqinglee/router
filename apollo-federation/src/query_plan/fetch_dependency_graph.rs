@@ -658,8 +658,7 @@ impl FetchDependencyGraph {
         //    which is important for some case of @requires).
         for existing_id in self.children_of(parent.parent_node_id) {
             let existing = self.node_weight(existing_id)?;
-            if existing.subgraph_name == *subgraph_name
-                && existing.merge_at.as_deref() == Some(merge_at)
+            if existing.merge_at.as_deref() == Some(merge_at)
                 && existing
                     .selection_set
                     .selection_set
@@ -679,6 +678,7 @@ impl FetchDependencyGraph {
                     .find(|rel| rel.parent_node_id == parent.parent_node_id)
                     .and_then(|rel| rel.path_in_parent)
                     == parent.path_in_parent
+                && existing.subgraph_name == *subgraph_name
             {
                 return Ok(existing_id);
             }
@@ -721,13 +721,11 @@ impl FetchDependencyGraph {
             parent_node_id,
             path_in_parent,
         } = parent_relation;
-        if self.graph.contains_edge(parent_node_id, child_id) {
-            return;
-        }
-        assert!(
-            !self.graph.contains_edge(child_id, parent_node_id),
-            "Node {parent_node_id:?} is a child of {child_id:?}: \
-             adding it as parent would create a cycle"
+        // TODO: check with sachin if it s ok to have duplicate edges + check if we can find a StableUniqueEdgeDiGraph or something
+        debug_assert!(
+            !self.graph.contains_edge(parent_node_id, child_id)
+                && !self.graph.contains_edge(child_id, parent_node_id),
+            "Node {child_id:?} is already connected to Node {parent_node_id:?}"
         );
         self.on_modification();
         self.graph.add_edge(
@@ -893,11 +891,22 @@ impl FetchDependencyGraph {
     }
 
     /// Find redundant edges coming out of a node. See `remove_redundant_edges`.
-    fn collect_redundant_edges(&self, node_index: NodeIndex, acc: &mut HashSet<EdgeIndex>) {
+    fn collect_redundant_edges(
+        &self,
+        node_index: NodeIndex,
+        acc: &mut HashSet<EdgeIndex>,
+        visited: &mut HashSet<NodeIndex>,
+    ) {
         let mut stack = vec![];
         for start_index in self.children_of(node_index) {
+            if !visited.insert(start_index) {
+                continue;
+            }
             stack.extend(self.children_of(start_index));
             while let Some(v) = stack.pop() {
+                if !visited.insert(start_index) {
+                    continue;
+                }
                 for edge in self.graph.edges_connecting(node_index, v) {
                     acc.insert(edge.id());
                 }
@@ -913,7 +922,7 @@ impl FetchDependencyGraph {
     /// direct child is removed, as we know it is also reachable through the deeply nested route.
     fn remove_redundant_edges(&mut self, node_index: NodeIndex) {
         let mut redundant_edges = HashSet::new();
-        self.collect_redundant_edges(node_index, &mut redundant_edges);
+        self.collect_redundant_edges(node_index, &mut redundant_edges, &mut HashSet::new());
 
         for edge in redundant_edges {
             self.graph.remove_edge(edge);
@@ -969,8 +978,9 @@ impl FetchDependencyGraph {
         // Two phases for mutability reasons: first all redundant edges coming out of all nodes are
         // collected and then they are all removed.
         let mut redundant_edges = HashSet::new();
+        let mut visited = HashSet::new();
         for node_index in self.graph.node_indices() {
-            self.collect_redundant_edges(node_index, &mut redundant_edges);
+            self.collect_redundant_edges(node_index, &mut redundant_edges, &mut visited);
         }
 
         for edge in redundant_edges {
