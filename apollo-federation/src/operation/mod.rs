@@ -942,6 +942,7 @@ mod fragment_spread_selection {
     use apollo_compiler::Name;
     use apollo_compiler::Node;
 
+    use super::Fragment;
     use crate::operation::is_deferred_selection;
     use crate::operation::sort_directives;
     use crate::operation::HasSelectionKey;
@@ -950,8 +951,6 @@ mod fragment_spread_selection {
     use crate::operation::SelectionSet;
     use crate::schema::position::CompositeTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
-
-    use super::Fragment;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) struct FragmentSpreadSelection {
@@ -2994,6 +2993,11 @@ impl<'a> FieldSelectionValue<'a> {
                 ));
             }
             if other_field.field_position != self_field.field_position {
+                panic!(
+                    "Cannot merge field selection for field \"{}\" into a field selection for field \"{}\"",
+                    other_field.field_position,
+                    self_field.field_position,
+            );
                 return Err(FederationError::internal(format!(
                     "Cannot merge field selection for field \"{}\" into a field selection for field \"{}\"",
                     other_field.field_position,
@@ -3845,8 +3849,9 @@ pub(crate) fn normalize_operation(
     // reuse (done by `optimize`) relies on the fact that its input is normalized to work properly,
     // so all the more reason to do it here.
     // PORT_NOTE: This was done in `Operation.expandAllFragments`, but it's moved here.
-    normalized_selection_set = normalized_selection_set.flatten_unnecessary_fragments(
-        &normalized_selection_set.type_position,
+    let type_position = normalized_selection_set.type_position.clone();
+    normalized_selection_set.flatten_unnecessary_fragments(
+        &type_position,
         &named_fragments,
         schema,
     )?;

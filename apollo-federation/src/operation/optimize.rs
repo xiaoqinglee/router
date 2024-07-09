@@ -76,14 +76,12 @@ impl NamedFragments {
         let mut result = NamedFragments::default();
         // Note: `self.fragments` has insertion order topologically sorted.
         for fragment in self.fragments.values() {
-            let expanded_selection_set = fragment
-                .selection_set
-                .expand_all_fragments()?
-                .flatten_unnecessary_fragments(
-                    &fragment.type_condition_position,
-                    &Default::default(),
-                    &fragment.schema,
-                )?;
+            let mut expanded_selection_set = fragment.selection_set.expand_all_fragments()?;
+            expanded_selection_set.flatten_unnecessary_fragments(
+                &fragment.type_condition_position,
+                &Default::default(),
+                &fragment.schema,
+            )?;
             let mut mapped_selection_set = mapper(&expanded_selection_set)?;
             // `mapped_selection_set` must be fragment-spread-free.
             mapped_selection_set.reuse_fragments(&result)?;
@@ -666,7 +664,8 @@ impl Fragment {
         ty: &CompositeTypeDefinitionPosition,
     ) -> Result<FragmentRestrictionAtType, FederationError> {
         let expanded_selection_set = self.selection_set.expand_all_fragments()?;
-        let normalized_selection_set = expanded_selection_set.flatten_unnecessary_fragments(
+        let mut normalized_selection_set = expanded_selection_set.clone();
+        normalized_selection_set.flatten_unnecessary_fragments(
             ty,
             /*named_fragments*/ &Default::default(),
             &self.schema,
@@ -678,7 +677,7 @@ impl Fragment {
             // Thus, we have to use the full validator in this case. (see
             // https://github.com/graphql/graphql-spec/issues/1085 for details.)
             return Ok(FragmentRestrictionAtType::new(
-                normalized_selection_set.clone(),
+                normalized_selection_set,
                 Some(FieldsConflictValidator::from_selection_set(
                     &expanded_selection_set,
                 )),
@@ -1193,16 +1192,18 @@ impl NamedFragments {
         // practice (we only call this optimization on the final computed query plan, so not a very
         // hot path; plus in most cases we won't even reach that point either because there is no
         // fragment, or none will have been optimized away so we'll exit above).
-        let reduced_selection_set = selection_set.retain_fragments(self)?;
+        let mut reduced_selection_set = selection_set.retain_fragments(self)?;
 
         // Expanding fragments could create some "inefficiencies" that we wouldn't have if we
         // hadn't re-optimized the fragments to de-optimize it later, so we do a final "flatten"
         // pass to remove those.
         reduced_selection_set.flatten_unnecessary_fragments(
-            &reduced_selection_set.type_position,
+            &selection_set.type_position,
             self,
             &selection_set.schema,
-        )
+        )?;
+
+        Ok(reduced_selection_set)
     }
 
     fn update_usages(usages: &mut HashMap<Name, i32>, fragment: &Node<Fragment>, usage_count: i32) {
@@ -1516,14 +1517,12 @@ impl Operation {
     // mainly for unit tests. The actual port of `expandAllFragments` is in `normalize_operation`.
     #[cfg(test)]
     fn expand_all_fragments_and_normalize(&self) -> Result<Self, FederationError> {
-        let selection_set = self
-            .selection_set
-            .expand_all_fragments()?
-            .flatten_unnecessary_fragments(
-                &self.selection_set.type_position,
-                &self.named_fragments,
-                &self.schema,
-            )?;
+        let mut selection_set = self.selection_set.expand_all_fragments()?;
+        selection_set.flatten_unnecessary_fragments(
+            &self.selection_set.type_position,
+            &self.named_fragments,
+            &self.schema,
+        )?;
         Ok(Self {
             named_fragments: Default::default(),
             selection_set,

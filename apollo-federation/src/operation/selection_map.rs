@@ -4,6 +4,7 @@ use std::sync::Arc;
 use apollo_compiler::executable;
 use apollo_compiler::Name;
 use indexmap::IndexSet;
+use itertools::Itertools as _;
 
 use super::Selection;
 use super::SelectionId;
@@ -47,6 +48,48 @@ pub(crate) enum SelectionKey {
         /// Unique selection ID used to distinguish deferred fragment spreads that cannot be merged.
         deferred_id: SelectionId,
     },
+    CollisionSentinel(SelectionId),
+}
+
+impl std::fmt::Display for SelectionKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Field {
+                response_name,
+                directives,
+            } => {
+                write!(f, "{response_name}")?;
+                if !directives.is_empty() {
+                    write!(f, " {directives}")?;
+                }
+            }
+            Self::InlineFragment {
+                type_condition,
+                directives,
+            } => {
+                if let Some(type_condition) = type_condition {
+                    write!(f, "... on {type_condition}")?;
+                } else {
+                    write!(f, "...")?;
+                }
+                if !directives.is_empty() {
+                    write!(f, " {directives}")?;
+                }
+            }
+            Self::FragmentSpread {
+                fragment_name,
+                directives,
+            } => {
+                write!(f, "...{fragment_name}")?;
+                if !directives.is_empty() {
+                    write!(f, " {directives}")?;
+                }
+            }
+            Self::Defer { deferred_id } => write!(f, "@defer[{deferred_id:?}]")?,
+            Self::CollisionSentinel(id) => write!(f, "COLLISION_SENTINEL[{id:?}]")?,
+        }
+        Ok(())
+    }
 }
 
 /// A sorted map of selections.
@@ -215,7 +258,7 @@ impl SelectionMap {
                     self.selections.insert(index, selection);
                     index += 1;
                 }
-                (merge_index, false) => {
+                (merge_index, false) if merge_index <= index => {
                     match (&mut self.selections[merge_index], selection) {
                         (Selection::Field(old_field), Selection::Field(new_field)) => {
                             FieldSelectionValue::new(old_field)
@@ -236,6 +279,77 @@ impl SelectionMap {
                         // branch can never be reached.
                         _ => unreachable!(),
                     }
+                }
+                (merge_index, false) => {
+                    // This is a very special case: we are merging in a selection at a place
+                    // *AFTER* the current index. This function is part of the `modify_selections()` API.
+                    // That means that we will iterate over the whole selection set and potentially
+                    // modify many selections. If we merge an element into a *later* element, that element
+                    // has not yet been modified.
+                    // This can be a problem. Imagine that the `modify_selections()` call is used
+                    // to change the parent type of a whole selection set and also flatten inline fragments.
+                    // Now, given `{ a ... { b } b }`:
+                    // - `a`'s parent type is changed. This does not change its key. Nothing problematic occurs.
+                    // - `... { b }` is flattened, and `b`'s parent type is changed. This changes
+                    // the key of the selection. Its new key is `b`. If we tried to merge the new selection
+                    // into the existing, final `b`, it would cause an error: the parent types
+                    // don't match, because the final `b` hasn't been visited yet.
+                    //
+                    // I avoid this by giving the final `b` an arbitrary key. Then, once it is
+                    // visited, its key will *always* mismatch, and it will be merged back into the
+                    // earlier `b` *after* both `b`s have been modified. This seems tricky, but
+                    // it's okay:
+                    // - During `modify_selections()`, user code cannot access any other fields in
+                    // the map, so it can't try to look up the second `b` by key.
+                    // - If any *other* selections are also merging into `b`, they will merge into
+                    // the first `b`, which has a correct key, not the second `b`, which has an
+                    // incorrect key.
+
+                    /*
+                                        eprintln!(
+                                            "merge_at({index}), {} {}",
+                                            self.keys.len(),
+                                            self.selections.len()
+                                        );
+                                        eprintln!(
+                                            "  keys: {}",
+                                            self.keys.iter().map(|x| format!("{x}")).join(", ")
+                                        );
+                                        eprintln!(
+                                            "  selections: {}",
+                                            self.selections.iter().map(|x| format!("{x}")).join(", ")
+                                        );
+                    */
+
+                    // Move the `merge_index` key to our current index
+                    self.keys.move_index(merge_index, index);
+                    self.selections.insert(index, selection);
+
+                    // The new insertion necessarily happened *before* `merge_index`: adjust it so
+                    // it still points to the same thing.
+                    let merge_index = merge_index + 1;
+
+                    // Replace the `merge_index` key by a sentinel value
+                    let sentinel_index = self
+                        .keys
+                        .insert_full(SelectionKey::CollisionSentinel(SelectionId::new()))
+                        .0;
+                    self.keys.move_index(sentinel_index, merge_index);
+                    index += 1;
+
+                    debug_assert_eq!(self.keys.len(), self.selections.len());
+
+                    /*
+                                        eprintln!("after: {} {}", self.keys.len(), self.selections.len());
+                                        eprintln!(
+                                            "  keys: {}",
+                                            self.keys.iter().map(|x| format!("{x}")).join(", ")
+                                        );
+                                        eprintln!(
+                                            "  selections: {}",
+                                            self.selections.iter().map(|x| format!("{x}")).join(", ")
+                                        );
+                    */
                 }
             }
         }
@@ -316,6 +430,9 @@ impl SelectionMap {
     }
 
     /// Modify selections in the map.
+    ///
+    /// If an error occurs during modification, this can leave the map in an invalid state. Can we
+    /// make this function *consume* self?
     pub(crate) fn modify_selections(
         &mut self,
         mut modify: impl FnMut(&mut Selection) -> Result<ModifySelection, FederationError>,
@@ -340,6 +457,18 @@ impl SelectionMap {
                     }
                 }
                 ModifySelection::Flatten(selection_set) => {
+                    /*
+                                        eprintln!("flatten({selection_set})");
+                                        eprintln!(
+                                            "  keys: {}",
+                                            self.keys.iter().map(|x| format!("{x:?}")).join(", ")
+                                        );
+                                        eprintln!(
+                                            "  selections: {}",
+                                            self.selections.iter().map(|x| format!("{x}")).join(", ")
+                                        );
+                    */
+
                     // Remove the current selection and replace it by the new selections.
                     self.keys.shift_remove_index(index);
                     self.selections.remove(index);
@@ -659,11 +788,20 @@ mod tests {
 
     use apollo_compiler::name;
 
+    use super::*;
     use crate::operation::Field;
+    use crate::schema::position::FieldDefinitionPosition;
     use crate::schema::position::ObjectTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
 
-    use super::*;
+    fn field(
+        schema: &ValidFederationSchema,
+        position: impl Into<FieldDefinitionPosition>,
+    ) -> Selection {
+        Field::from_position(schema, position.into())
+            .with_subselection(None)
+            .into()
+    }
 
     #[test]
     fn some_duplicate_field_selections() {
@@ -680,10 +818,10 @@ mod tests {
 
         let q = ObjectTypeDefinitionPosition::new(name!("Query"));
         let selection_map: SelectionMap = [
-            Field::from_position(&schema, q.field(name!("a")).into()).with_subselection(None),
-            Field::from_position(&schema, q.field(name!("b")).into()).with_subselection(None),
-            Field::from_position(&schema, q.field(name!("a")).into()).with_subselection(None),
-            Field::from_position(&schema, q.field(name!("c")).into()).with_subselection(None),
+            field(&schema, q.field(name!("a"))),
+            field(&schema, q.field(name!("b"))),
+            field(&schema, q.field(name!("a"))),
+            field(&schema, q.field(name!("c"))),
         ]
         .into_iter()
         .collect();
@@ -692,18 +830,9 @@ mod tests {
         assert_eq!(
             selections,
             [
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("a")).into()),
-                    None
-                ),
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("b")).into()),
-                    None
-                ),
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("c")).into()),
-                    None
-                ),
+                &field(&schema, q.field(name!("a"))),
+                &field(&schema, q.field(name!("b"))),
+                &field(&schema, q.field(name!("c"))),
             ]
         );
     }
@@ -722,9 +851,9 @@ mod tests {
         .unwrap();
 
         let q = ObjectTypeDefinitionPosition::new(name!("Query"));
-        let a = Field::from_position(&schema, q.field(name!("a")).into()).with_subselection(None);
-        let b = Field::from_position(&schema, q.field(name!("b")).into()).with_subselection(None);
-        let c = Field::from_position(&schema, q.field(name!("c")).into()).with_subselection(None);
+        let a = field(&schema, q.field(name!("a")));
+        let b = field(&schema, q.field(name!("b")));
+        let c = field(&schema, q.field(name!("c")));
         let mut selection_map: SelectionMap =
             [a.clone(), b.clone(), c.clone()].into_iter().collect();
 
@@ -774,15 +903,9 @@ mod tests {
         assert_eq!(
             selections,
             [
-                &Selection::from_field(a, None),
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("b")).into()),
-                    None
-                ),
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("c")).into()),
-                    None
-                ),
+                &a.with_subselection(None).into(),
+                &field(&schema, q.field(name!("b"))),
+                &field(&schema, q.field(name!("c"))),
             ]
         );
     }
@@ -801,9 +924,9 @@ mod tests {
         .unwrap();
 
         let q = ObjectTypeDefinitionPosition::new(name!("Query"));
-        let a = Field::from_position(&schema, q.field(name!("a")).into()).with_subselection(None);
-        let b = Field::from_position(&schema, q.field(name!("b")).into()).with_subselection(None);
-        let c = Field::from_position(&schema, q.field(name!("c")).into()).with_subselection(None);
+        let a = field(&schema, q.field(name!("a")));
+        let b = field(&schema, q.field(name!("b")));
+        let c = field(&schema, q.field(name!("c")));
         let mut selection_map: SelectionMap =
             [a.clone(), b.clone(), c.clone()].into_iter().collect();
 
@@ -841,14 +964,8 @@ mod tests {
         assert_eq!(
             selections,
             [
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("b")).into()),
-                    None
-                ),
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("c")).into()),
-                    None
-                ),
+                &field(&schema, q.field(name!("b"))),
+                &field(&schema, q.field(name!("c"))),
             ]
         );
     }
@@ -870,9 +987,9 @@ mod tests {
         .unwrap();
 
         let q = ObjectTypeDefinitionPosition::new(name!("Query"));
-        let a = Field::from_position(&schema, q.field(name!("a")).into()).with_subselection(None);
-        let b = Field::from_position(&schema, q.field(name!("b")).into()).with_subselection(None);
-        let c = Field::from_position(&schema, q.field(name!("c")).into()).with_subselection(None);
+        let a = field(&schema, q.field(name!("a")));
+        let b = field(&schema, q.field(name!("b")));
+        let c = field(&schema, q.field(name!("c")));
         let mut selection_map: SelectionMap =
             [a.clone(), b.clone(), c.clone()].into_iter().collect();
 
@@ -882,12 +999,9 @@ mod tests {
                     selection.schema().clone(),
                     q.clone().into(),
                     [
-                        Field::from_position(&schema, q.field(name!("d")).into())
-                            .with_subselection(None),
-                        Field::from_position(&schema, q.field(name!("e")).into())
-                            .with_subselection(None),
-                        Field::from_position(&schema, q.field(name!("f")).into())
-                            .with_subselection(None),
+                        field(&schema, q.field(name!("d"))),
+                        field(&schema, q.field(name!("e"))),
+                        field(&schema, q.field(name!("f"))),
                     ],
                 )))
             })
@@ -921,18 +1035,9 @@ mod tests {
         assert_eq!(
             selections,
             [
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("d")).into()),
-                    None
-                ),
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("e")).into()),
-                    None
-                ),
-                &Selection::from_field(
-                    Field::from_position(&schema, q.field(name!("f")).into()),
-                    None
-                ),
+                &field(&schema, q.field(name!("d"))),
+                &field(&schema, q.field(name!("e"))),
+                &field(&schema, q.field(name!("f"))),
             ]
         );
     }

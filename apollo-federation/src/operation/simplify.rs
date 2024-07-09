@@ -5,6 +5,7 @@ use apollo_compiler::name;
 use apollo_compiler::Node;
 
 use super::runtime_types_intersect;
+use super::selection_map::ModifySelection;
 use super::Field;
 use super::FieldSelection;
 use super::FragmentSpreadSelection;
@@ -25,32 +26,38 @@ pub(crate) enum SelectionOrSet {
 
 impl Selection {
     fn flatten_unnecessary_fragments(
-        &self,
+        &mut self,
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-    ) -> Result<Option<SelectionOrSet>, FederationError> {
+    ) -> Result<ModifySelection, FederationError> {
         match self {
-            Selection::Field(field) => {
-                field.flatten_unnecessary_fragments(parent_type, named_fragments, schema)
+            Selection::Field(field) => Arc::make_mut(field).flatten_unnecessary_fragments(
+                parent_type,
+                named_fragments,
+                schema,
+            ),
+            Selection::FragmentSpread(_spread) => {
+                FragmentSpreadSelection::flatten_unnecessary_fragments(
+                    self,
+                    parent_type,
+                    named_fragments,
+                    schema,
+                )
             }
-            Selection::FragmentSpread(spread) => {
-                spread.flatten_unnecessary_fragments(parent_type, named_fragments, schema)
-            }
-            Selection::InlineFragment(inline) => {
-                inline.flatten_unnecessary_fragments(parent_type, named_fragments, schema)
-            }
+            Selection::InlineFragment(inline) => Arc::make_mut(inline)
+                .flatten_unnecessary_fragments(parent_type, named_fragments, schema),
         }
     }
 }
 
 impl FieldSelection {
     fn flatten_unnecessary_fragments(
-        &self,
+        &mut self,
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-    ) -> Result<Option<SelectionOrSet>, FederationError> {
+    ) -> Result<ModifySelection, FederationError> {
         let field_position =
             if self.field.schema() == schema && self.field.parent_type_position() == *parent_type {
                 self.field.field_position.clone()
@@ -66,18 +73,16 @@ impl FieldSelection {
                     .with_updated_position(schema.clone(), field_position)
             };
 
-        if let Some(selection_set) = &self.selection_set {
+        if let Some(selection_set) = &mut self.selection_set {
             let field_composite_type_position: CompositeTypeDefinitionPosition =
                 field_element.output_base_type()?.try_into()?;
-            let mut normalized_selection: SelectionSet = selection_set
-                .flatten_unnecessary_fragments(
-                    &field_composite_type_position,
-                    named_fragments,
-                    schema,
-                )?;
+            selection_set.flatten_unnecessary_fragments(
+                &field_composite_type_position,
+                named_fragments,
+                schema,
+            )?;
 
-            let mut selection = self.with_updated_element(field_element);
-            if normalized_selection.is_empty() {
+            if selection_set.is_empty() {
                 // In rare cases, it's possible that everything in the sub-selection was trimmed away and so the
                 // sub-selection is empty. Which suggest something may be wrong with this part of the query
                 // intent, but the query was valid while keeping an empty sub-selection isn't. So in that
@@ -105,58 +110,56 @@ impl FieldSelection {
                 let mut typename_selection = SelectionMap::empty();
                 typename_selection.insert(non_included_typename);
 
-                normalized_selection.selections = Arc::new(typename_selection);
-                selection.selection_set = Some(normalized_selection);
-            } else {
-                selection.selection_set = Some(normalized_selection);
+                selection_set.selections = Arc::new(typename_selection);
             }
-            Ok(Some(SelectionOrSet::Selection(Selection::from(selection))))
-        } else {
-            Ok(Some(SelectionOrSet::Selection(Selection::from(
-                self.with_updated_element(field_element),
-            ))))
         }
+        *self = self.with_updated_element(field_element);
+        Ok(ModifySelection::Keep)
     }
 }
 
 impl FragmentSpreadSelection {
     fn flatten_unnecessary_fragments(
-        &self,
+        selection: &mut Selection,
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-    ) -> Result<Option<SelectionOrSet>, FederationError> {
-        let this_condition = self.spread.type_condition_position.clone();
-        // This method assumes by contract that `parent_type` runtimes intersects `self.inline_fragment.parent_type_position`'s,
+    ) -> Result<ModifySelection, FederationError> {
+        let Selection::FragmentSpread(s) = selection else {
+            unreachable!();
+        };
+
+        let this_condition = &s.spread.type_condition_position;
+        // This method assumes by contract that `parent_type` runtimes intersects `s.inline_fragment.parent_type_position`'s,
         // but `parent_type` runtimes may be a subset. So first check if the selection should not be discarded on that account (that
         // is, we should not keep the selection if its condition runtimes don't intersect at all with those of
         // `parent_type` as that would ultimately make an invalid selection set).
-        if (self.spread.schema != *schema || this_condition != *parent_type)
-            && !runtime_types_intersect(&this_condition, parent_type, schema)
+        if (s.spread.schema != *schema || this_condition != parent_type)
+            && !runtime_types_intersect(this_condition, parent_type, schema)
         {
-            return Ok(None);
+            return Ok(ModifySelection::Keep);
         }
 
         // We must update the spread parent type if necessary since we're not going deeper,
         // or we'll be fundamentally losing context.
-        if self.spread.schema != *schema {
+        if s.spread.schema != *schema {
             return Err(FederationError::internal(
                 "Should not try to flatten_unnecessary_fragments using a type from another schema",
             ));
         }
 
-        let rebased_fragment_spread = self.rebase_on(parent_type, named_fragments, schema)?;
-        Ok(Some(SelectionOrSet::Selection(rebased_fragment_spread)))
+        *selection = s.rebase_on(parent_type, named_fragments, schema)?;
+        Ok(ModifySelection::Keep)
     }
 }
 
 impl InlineFragmentSelection {
     fn flatten_unnecessary_fragments(
-        &self,
+        &mut self,
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-    ) -> Result<Option<SelectionOrSet>, FederationError> {
+    ) -> Result<ModifySelection, FederationError> {
         let this_condition = self.inline_fragment.type_condition_position.clone();
         // This method assumes by contract that `parent_type` runtimes intersects `self.inline_fragment.parent_type_position`'s,
         // but `parent_type` runtimes may be a subset. So first check if the selection should not be discarded on that account (that
@@ -167,7 +170,7 @@ impl InlineFragmentSelection {
                 || self.inline_fragment.parent_type_position != *parent_type)
                 && !runtime_types_intersect(type_condition, parent_type, schema)
             {
-                return Ok(None);
+                return Ok(ModifySelection::Remove);
             }
         }
 
@@ -192,32 +195,35 @@ impl InlineFragmentSelection {
                     schema,
                 )?;
                 return if selection_set.is_empty() {
-                    Ok(None)
+                    Ok(ModifySelection::Remove)
                 } else {
                     // We need to rebase since the parent type for the selection set could be
                     // changed.
                     // Note: Rebasing after flattening, since rebasing before that can error out.
                     //       Or, `flatten_unnecessary_fragments` could `rebase` at the same time.
                     let selection_set = if useless_fragment {
-                        selection_set.clone()
+                        selection_set
                     } else {
                         selection_set.rebase_on(parent_type, named_fragments, schema)?
                     };
-                    Ok(Some(SelectionOrSet::SelectionSet(selection_set)))
+                    Ok(ModifySelection::Flatten(selection_set))
                 };
             }
         }
 
         // Note: This selection_set is not rebased here yet. It will be rebased later as necessary.
-        let selection_set = self.selection_set.flatten_unnecessary_fragments(
-            &self.selection_set.type_position,
+        let selection_set = &mut self.selection_set;
+        let s_type_position = selection_set.type_position.clone();
+        let s_schema = selection_set.schema.clone();
+        selection_set.flatten_unnecessary_fragments(
+            &s_type_position,
             named_fragments,
-            &self.selection_set.schema,
+            &s_schema,
         )?;
         // It could be that nothing was satisfiable.
         if selection_set.is_empty() {
             if self.inline_fragment.directives.is_empty() {
-                return Ok(None);
+                return Ok(ModifySelection::Remove);
             } else {
                 let rebased_fragment = self.inline_fragment.rebase_on(parent_type, schema)?;
                 // We should be able to rebase, or there is a bug, so error if that is the case.
@@ -242,7 +248,7 @@ impl InlineFragmentSelection {
                         field_position: parent_typename_field,
                         alias: None,
                         arguments: Arc::new(vec![]),
-                        directives: directives,
+                        directives,
                         sibling_typename: None,
                     },
                     None,
@@ -250,13 +256,11 @@ impl InlineFragmentSelection {
 
                 // Return `... [on <rebased condition>] { __typename @include(if: false) }`
                 let rebased_casted_type = rebased_fragment.casted_type();
-                return Ok(Some(SelectionOrSet::Selection(
-                    InlineFragmentSelection::new(
-                        rebased_fragment,
-                        SelectionSet::from_selection(rebased_casted_type, typename_field_selection),
-                    )
-                    .into(),
-                )));
+                *self = InlineFragmentSelection::new(
+                    rebased_fragment,
+                    SelectionSet::from_selection(rebased_casted_type, typename_field_selection),
+                );
+                return Ok(ModifySelection::Keep);
             }
         }
 
@@ -304,7 +308,7 @@ impl InlineFragmentSelection {
                 // Rebasing is necessary since this normalized sub-selection set changed its parent.
                 let rebased_selection_set =
                     selection_set.rebase_on(parent_type, named_fragments, schema)?;
-                return Ok(Some(SelectionOrSet::SelectionSet(rebased_selection_set)));
+                return Ok(ModifySelection::Flatten(rebased_selection_set));
             }
 
             // Otherwise, if there are "liftable" selections, we must return a set comprised of those lifted selection,
@@ -346,30 +350,22 @@ impl InlineFragmentSelection {
                     type_position: parent_type.clone(),
                     selections: final_selection_map.into(),
                 };
-                return Ok(Some(SelectionOrSet::SelectionSet(final_selections)));
+                return Ok(ModifySelection::Flatten(final_selections));
             }
         }
 
         if self.inline_fragment.schema == *schema
             && self.inline_fragment.parent_type_position == *parent_type
-            && self.selection_set == selection_set
         {
-            // flattening did not change the fragment
-            // TODO(@goto-bus-stop): no change, but we still create a non-trivial clone here
-            Ok(Some(SelectionOrSet::Selection(Selection::InlineFragment(
-                Arc::new(self.clone()),
-            ))))
+            // we do not need to rebase
+            Ok(ModifySelection::Keep)
         } else {
             let rebased_inline_fragment = self.inline_fragment.rebase_on(parent_type, schema)?;
             let rebased_casted_type = rebased_inline_fragment.casted_type();
             let rebased_selection_set =
                 selection_set.rebase_on(&rebased_casted_type, named_fragments, schema)?;
-            Ok(Some(SelectionOrSet::Selection(Selection::InlineFragment(
-                Arc::new(InlineFragmentSelection::new(
-                    rebased_inline_fragment,
-                    rebased_selection_set,
-                )),
-            ))))
+            *self = InlineFragmentSelection::new(rebased_inline_fragment, rebased_selection_set);
+            Ok(ModifySelection::Keep)
         }
     }
 }
@@ -451,40 +447,45 @@ impl SelectionSet {
     // PORT_NOTE: in JS, this had a `recursive: false` flag, which would only apply the
     // simplification at the top level. This appears to be unused.
     pub(super) fn flatten_unnecessary_fragments(
-        &self,
+        &mut self,
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
     ) -> Result<SelectionSet, FederationError> {
-        let mut normalized_selections = Self {
-            schema: schema.clone(),
-            type_position: parent_type.clone(),
-            selections: Arc::new(SelectionMap::empty()), // start empty
-        };
-        for selection in self.selections.values() {
-            if let Some(selection_or_set) =
-                selection.flatten_unnecessary_fragments(parent_type, named_fragments, schema)?
-            {
-                match selection_or_set {
-                    SelectionOrSet::Selection(normalized_selection) => {
-                        normalized_selections.add_local_selection(&normalized_selection)?;
-                    }
-                    SelectionOrSet::SelectionSet(normalized_set) => {
-                        // Since the `selection` has been expanded/lifted, we use
-                        // `add_selection_set_with_fragments` to make sure it's rebased.
-                        normalized_selections
-                            .add_selection_set_with_fragments(&normalized_set, named_fragments)?;
-                    }
-                }
-            }
-        }
-        Ok(normalized_selections)
+        Arc::make_mut(&mut self.selections).modify_selections(|selection| {
+            selection.flatten_unnecessary_fragments(parent_type, named_fragments, schema)
+        })?;
+
+        Ok(self.clone())
+
+        //let mut normalized_selections = Self {
+        //    schema: schema.clone(),
+        //    type_position: parent_type.clone(),
+        //    selections: Arc::new(SelectionMap::empty()), // start empty
+        //};
+        //for selection in self.selections.values() {
+        //    if let Some(selection_or_set) =
+        //        selection.flatten_unnecessary_fragments(parent_type, named_fragments, schema)?
+        //    {
+        //        match selection_or_set {
+        //            SelectionOrSet::Selection(normalized_selection) => {
+        //                normalized_selections.add_local_selection(&normalized_selection)?;
+        //            }
+        //            SelectionOrSet::SelectionSet(normalized_set) => {
+        //                // Since the `selection` has been expanded/lifted, we use
+        //                // `add_selection_set_with_fragments` to make sure it's rebased.
+        //                normalized_selections
+        //                    .add_selection_set_with_fragments(&normalized_set, named_fragments)?;
+        //            }
+        //        }
+        //    }
+        //}
+        //Ok(normalized_selections)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::operation::Operation;
     use crate::schema::ValidFederationSchema;
 
@@ -529,14 +530,13 @@ mod tests {
 
         let flatten = |op: &str| {
             let op = Operation::parse(schema.clone(), op, "operation.graphql", None).unwrap();
-            op.selection_set
-                .flatten_unnecessary_fragments(
-                    &op.selection_set.type_position,
-                    &op.named_fragments,
-                    &schema,
-                )
-                .unwrap()
-                .to_string()
+            let type_position = op.selection_set.type_position.clone();
+            let named_fragments = op.named_fragments;
+            let mut selection_set = op.selection_set;
+            selection_set
+                .flatten_unnecessary_fragments(&type_position, &named_fragments, &schema)
+                .unwrap();
+            selection_set.to_string()
         };
 
         let identity = |op: &str| flatten(op) == op;
