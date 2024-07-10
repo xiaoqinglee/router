@@ -166,7 +166,7 @@ pub(crate) struct FetchSelectionSet {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FetchInputs {
     /// The selection sets to be used as input to `_entities`, separated per parent type.
-    selection_sets_per_parent_type: IndexMap<CompositeTypeDefinitionPosition, Arc<SelectionSet>>,
+    selection_sets_per_parent_type: IndexMap<CompositeTypeDefinitionPosition, Arc<SelectionSet>, ahash::RandomState>,
     /// The supergraph schema (primarily used for validation of added selection sets).
     supergraph_schema: ValidFederationSchema,
 }
@@ -895,8 +895,8 @@ impl FetchDependencyGraph {
     fn collect_redundant_edges(
         &self,
         node_index: NodeIndex,
-        acc: &mut HashSet<EdgeIndex>,
-        visited: &mut HashSet<NodeIndex>,
+        acc: &mut HashSet<EdgeIndex, ahash::RandomState>,
+        visited: &mut HashSet<NodeIndex, ahash::RandomState>,
     ) {
         let mut stack = vec![];
         for start_index in self.children_of(node_index) {
@@ -922,8 +922,8 @@ impl FetchDependencyGraph {
     /// If any deeply nested child of this node has an edge to any direct child of this node, the
     /// direct child is removed, as we know it is also reachable through the deeply nested route.
     fn remove_redundant_edges(&mut self, node_index: NodeIndex) {
-        let mut redundant_edges = HashSet::new();
-        self.collect_redundant_edges(node_index, &mut redundant_edges, &mut HashSet::new());
+        let mut redundant_edges = HashSet::with_hasher(Default::default());
+        self.collect_redundant_edges(node_index, &mut redundant_edges, &mut HashSet::with_hasher(Default::default()));
 
         for edge in redundant_edges {
             self.graph.remove_edge(edge);
@@ -978,8 +978,8 @@ impl FetchDependencyGraph {
 
         // Two phases for mutability reasons: first all redundant edges coming out of all nodes are
         // collected and then they are all removed.
-        let mut redundant_edges = HashSet::new();
-        let mut visited = HashSet::new();
+        let mut redundant_edges = HashSet::with_hasher(Default::default());
+        let mut visited = HashSet::with_hasher(Default::default());
         for node_index in self.graph.node_indices() {
             self.collect_redundant_edges(node_index, &mut redundant_edges, &mut visited);
         }
@@ -2058,7 +2058,7 @@ impl FetchDependencyGraph {
         merged_id: NodeIndex,
         path_in_this: &OpPath,
     ) {
-        let mut new_parent_relations = HashMap::new();
+        let mut new_parent_relations = HashMap::with_hasher(ahash::RandomState::default());
         for child_id in self.children_of(merged_id) {
             // This could already be a child of `this`. Typically, we can have case where we have:
             //     1

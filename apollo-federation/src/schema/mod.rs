@@ -58,13 +58,13 @@ pub struct FederationSchema {
     /// This is only populated for valid subgraphs, and can only be accessed if you have a
     /// `ValidFederationSchema`.
     subgraph_metadata: Option<Box<SubgraphMetadata>>,
-    union_members: HashMap<NamedType, IndexSet<ObjectTypeDefinitionPosition>>,
+    union_members: HashMap<NamedType, IndexSet<ObjectTypeDefinitionPosition, ahash::RandomState>>,
 }
 
 #[derive(Debug)]
 pub(crate) enum PossibleRuntimeTypes<'a> {
     Single(&'a ObjectTypeDefinitionPosition),
-    Many(&'a IndexSet<ObjectTypeDefinitionPosition>),
+    Many(&'a IndexSet<ObjectTypeDefinitionPosition, ahash::RandomState>),
 }
 
 impl FederationSchema {
@@ -153,9 +153,9 @@ impl FederationSchema {
     pub(crate) fn possible_runtime_types(
         &self,
         composite_type_definition_position: CompositeTypeDefinitionPosition,
-    ) -> Result<IndexSet<ObjectTypeDefinitionPosition>, FederationError> {
+    ) -> Result<IndexSet<ObjectTypeDefinitionPosition, ahash::RandomState>, FederationError> {
         Ok(match composite_type_definition_position {
-            CompositeTypeDefinitionPosition::Object(pos) => IndexSet::from([pos]),
+            CompositeTypeDefinitionPosition::Object(pos) => IndexSet::from_iter(std::iter::once(pos)),
             CompositeTypeDefinitionPosition::Interface(pos) => self
                 .referencers()
                 .get_interface_type(&pos.type_name)?
@@ -168,7 +168,7 @@ impl FederationSchema {
                 .map(|t| ObjectTypeDefinitionPosition {
                     type_name: t.name.clone(),
                 })
-                .collect::<IndexSet<_>>(),
+                .collect::<IndexSet<_, _>>(),
         })
     }
 

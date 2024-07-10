@@ -64,7 +64,7 @@ pub(crate) fn parse_field_set(
     )?;
 
     // field set should not contain any named fragments
-    let named_fragments = NamedFragments::new(&IndexMap::new(), schema);
+    let named_fragments = NamedFragments::new(&IndexMap::with_hasher(Default::default()), schema);
     let selection_set =
         SelectionSet::from_selection_set(&field_set.selection_set, &named_fragments, schema)?;
 

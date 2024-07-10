@@ -3969,7 +3969,7 @@ pub(crate) struct NamedFragments {
 
 impl NamedFragments {
     pub(crate) fn new(
-        fragments: &IndexMap<Name, Node<executable::Fragment>>,
+        fragments: &IndexMap<Name, Node<executable::Fragment>, ahash::RandomState>,
         schema: &ValidFederationSchema,
     ) -> NamedFragments {
         // JS PORT - In order to normalize Fragments we need to process them in dependency order.
@@ -4048,7 +4048,7 @@ impl NamedFragments {
     /// We normalize passed in fragments in their dependency order, i.e. if a fragment A uses another fragment B, then we will
     /// normalize B _before_ attempting to normalize A. Normalized fragments have access to previously normalized fragments.
     fn initialize_in_dependency_order(
-        fragments: &IndexMap<Name, Node<executable::Fragment>>,
+        fragments: &IndexMap<Name, Node<executable::Fragment>, ahash::RandomState>,
         schema: &ValidFederationSchema,
     ) -> NamedFragments {
         struct FragmentDependencies {
@@ -4370,7 +4370,7 @@ impl TryFrom<Operation> for Valid<executable::ExecutableDocument> {
                     Node::new(executable::Fragment::try_from(&**fragment)?),
                 ))
             })
-            .collect::<Result<IndexMap<_, _>, FederationError>>()?;
+            .collect::<Result<IndexMap<_, _, ahash::RandomState>, FederationError>>()?;
 
         let mut document = executable::ExecutableDocument::new();
         document.fragments = fragments;

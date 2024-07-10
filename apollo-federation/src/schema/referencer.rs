@@ -1,6 +1,8 @@
 use apollo_compiler::Name;
 use indexmap::IndexMap;
-use indexmap::IndexSet;
+use indexmap::IndexSet as IIS;
+
+type IndexSet<T> = IIS<T, ahash::RandomState>;
 
 use crate::error::FederationError;
 use crate::error::SingleFederationError;

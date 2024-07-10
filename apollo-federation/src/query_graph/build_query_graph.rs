@@ -6,12 +6,14 @@ use apollo_compiler::validation::Valid;
 use apollo_compiler::Name;
 use apollo_compiler::Schema;
 use indexmap::IndexMap;
-use indexmap::IndexSet;
+use indexmap::IndexSet as IIS;
 use petgraph::graph::EdgeIndex;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use strum::IntoEnumIterator;
+
+type IndexSet<T> = IIS<T, ahash::RandomState>;
 
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
@@ -116,10 +118,10 @@ impl BaseQueryGraphBuilder {
         query_graph.sources.insert(source.clone(), schema);
         query_graph
             .types_to_nodes_by_source
-            .insert(source.clone(), IndexMap::new());
+            .insert(source.clone(), IndexMap::with_hasher(Default::default()));
         query_graph
             .root_kinds_to_nodes_by_source
-            .insert(source.clone(), IndexMap::new());
+            .insert(source.clone(), IndexMap::with_hasher(Default::default()));
         Self { query_graph }
     }
 
@@ -196,7 +198,7 @@ impl BaseQueryGraphBuilder {
             self.query_graph
                 .types_to_nodes_mut()?
                 .entry(pos.type_name().clone())
-                .or_insert_with(IndexSet::new)
+                .or_insert_with(|| IndexSet::with_hasher(Default::default()))
                 .insert(node);
         }
         Ok(node)
@@ -1007,7 +1009,7 @@ impl FederatedQueryGraphBuilder {
     }
 
     fn add_federated_root_nodes(&mut self) -> Result<(), FederationError> {
-        let mut root_kinds = IndexSet::new();
+        let mut root_kinds = IndexSet::with_hasher(Default::default());
         for (source, root_kinds_to_nodes) in &self.base.query_graph.root_kinds_to_nodes_by_source {
             if *source == self.base.query_graph.current_source {
                 continue;
@@ -1023,7 +1025,7 @@ impl FederatedQueryGraphBuilder {
     }
 
     fn copy_types_to_nodes(&mut self) -> Result<(), FederationError> {
-        let mut federated_type_to_nodes = IndexMap::new();
+        let mut federated_type_to_nodes = IndexMap::with_hasher(Default::default());
         for (source, types_to_nodes) in &self.base.query_graph.types_to_nodes_by_source {
             if *source == self.base.query_graph.current_source {
                 continue;
@@ -1031,7 +1033,7 @@ impl FederatedQueryGraphBuilder {
             for (type_name, nodes) in types_to_nodes {
                 let federated_nodes = federated_type_to_nodes
                     .entry(type_name.clone())
-                    .or_insert_with(IndexSet::new);
+                    .or_insert_with(|| IndexSet::with_hasher(Default::default()));
                 for node in nodes {
                     federated_nodes.insert(*node);
                 }
@@ -1867,7 +1869,7 @@ impl FederatedQueryGraphBuilder {
         for edge in self.base.query_graph.graph.edge_indices() {
             let edge_weight = self.base.query_graph.edge_weight(edge)?;
             let (_, tail) = self.base.query_graph.edge_endpoints(edge)?;
-            let mut non_trivial_followups = IndexSet::new();
+            let mut non_trivial_followups = IndexSet::with_hasher(Default::default());
             for followup_edge_ref in self
                 .base
                 .query_graph

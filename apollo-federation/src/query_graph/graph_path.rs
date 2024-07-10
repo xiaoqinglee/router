@@ -10,8 +10,6 @@ use std::sync::Arc;
 
 use apollo_compiler::ast::Value;
 use apollo_compiler::executable::DirectiveList;
-use indexmap::IndexMap;
-use indexmap::IndexSet;
 use petgraph::graph::EdgeIndex;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -52,6 +50,11 @@ use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::OutputTypeDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
+
+use indexmap::IndexMap as IIM;
+use indexmap::IndexSet as IIS;
+type IndexSet<T> = IIS<T, ahash::RandomState>;
+type IndexMap<K,V> = IIM<K, V, ahash::RandomState>;
 
 /// An immutable path in a query graph.
 ///
@@ -819,9 +822,9 @@ where
             edge_triggers: vec![],
             edge_conditions: vec![],
             last_subgraph_entering_edge_info: None,
-            own_path_ids: Arc::new(IndexSet::new()),
-            overriding_path_ids: Arc::new(IndexSet::new()),
-            runtime_types_of_tail: Arc::new(IndexSet::new()),
+            own_path_ids: Arc::new(IndexSet::with_hasher(Default::default())),
+            overriding_path_ids: Arc::new(IndexSet::with_hasher(Default::default())),
+            runtime_types_of_tail: Arc::new(IndexSet::with_hasher(Default::default())),
             runtime_types_before_tail_if_last_is_cast: None,
             defer_on_tail: None,
         };
@@ -841,7 +844,7 @@ where
                     .schema_by_source(&head_weight.source)?
                     .possible_runtime_types(head_type_pos)?
             }
-            QueryGraphNodeType::FederatedRootType(_) => IndexSet::new(),
+            QueryGraphNodeType::FederatedRootType(_) => IndexSet::with_hasher(Default::default()),
         })
     }
 
@@ -1421,7 +1424,7 @@ where
         type BestPathInfo<TTrigger, TEdge> =
             Option<(Arc<GraphPath<TTrigger, TEdge>>, QueryPlanCost)>;
         let mut best_path_by_source: IndexMap<Arc<str>, BestPathInfo<TTrigger, TEdge>> =
-            IndexMap::new();
+        IndexMap::with_hasher(Default::default());
         let dead_ends = vec![];
         // Note that through `excluded` we avoid taking the same edge from multiple options. But
         // that means it's important we try the smallest paths first. That is, if we could in theory
@@ -2538,7 +2541,7 @@ impl OpGraphPath {
                                     )
                                 ));
                             }
-                            Arc::new(IndexSet::from([field_parent_pos.clone()]))
+                            Arc::new(IndexSet::from_iter(std::iter::once(field_parent_pos.clone())))
                         } else {
                             self.runtime_types_of_tail.clone()
                         };

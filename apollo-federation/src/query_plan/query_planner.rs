@@ -306,7 +306,7 @@ impl QueryPlanner {
         })
     }
 
-    pub fn subgraph_schemas(&self) -> &IndexMap<Arc<str>, ValidFederationSchema> {
+    pub fn subgraph_schemas(&self) -> &IndexMap<Arc<str>, ValidFederationSchema, ahash::RandomState> {
         self.federated_query_graph.subgraph_schemas()
     }
 
