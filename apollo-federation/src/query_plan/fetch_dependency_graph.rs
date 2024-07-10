@@ -672,12 +672,12 @@ impl FetchDependencyGraph {
                         )
                     })
                 && !self.is_in_nodes_or_their_ancestors(existing_id, conditions_nodes)
-                && existing.defer_ref.as_ref() == defer_ref
                 && self
                     .parents_relations_of(existing_id)
                     .find(|rel| rel.parent_node_id == parent.parent_node_id)
                     .and_then(|rel| rel.path_in_parent)
                     == parent.path_in_parent
+                && existing.defer_ref.as_ref() == defer_ref
                 && existing.subgraph_name == *subgraph_name
             {
                 return Ok(existing_id);
@@ -721,6 +721,7 @@ impl FetchDependencyGraph {
             parent_node_id,
             path_in_parent,
         } = parent_relation;
+
         // TODO: check with sachin if it s ok to have duplicate edges + check if we can find a StableUniqueEdgeDiGraph or something
         debug_assert!(
             !self.graph.contains_edge(parent_node_id, child_id)
@@ -1851,10 +1852,10 @@ impl FetchDependencyGraph {
             return Ok(false);
         };
 
-        Ok(node.defer_ref == sibling.defer_ref
-            && node.subgraph_name == sibling.subgraph_name
+        Ok(own_parent_id == sibling_parent_id
             && node.merge_at == sibling.merge_at
-            && own_parent_id == sibling_parent_id)
+            && node.defer_ref == sibling.defer_ref
+            && node.subgraph_name == sibling.subgraph_name)
     }
 
     fn can_merge_grand_child_in(

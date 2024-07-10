@@ -724,7 +724,7 @@ impl Fragment {
         self.selection_set.selections.iter().any(|(selection_key, _)| {
             matches!(
                 selection_key,
-                SelectionKey::FragmentSpread {fragment_name, directives: _} if fragment_name == other_fragment_name,
+                SelectionKey::FragmentSpread {fragment_name, ..} if fragment_name == other_fragment_name,
             )
         })
     }

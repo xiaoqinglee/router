@@ -143,7 +143,7 @@ type CoerceResult = Result<(), ()>;
 /// Recursively assign default values in input object values, mutating the value.
 /// If the default value is invalid, returns `Err(())`.
 fn coerce_value(
-    types: &IndexMap<Name, ExtendedType>,
+    types: &IndexMap<Name, ExtendedType, ahash::RandomState>,
     target: &mut Node<Value>,
     ty: &Type,
 ) -> CoerceResult {
@@ -215,7 +215,7 @@ fn coerce_value(
 /// Coerce default values in all the given arguments, mutating the arguments.
 /// If a default value is invalid, the whole default value is removed silently.
 fn coerce_arguments_default_values(
-    types: &IndexMap<Name, ExtendedType>,
+    types: &IndexMap<Name, ExtendedType, ahash::RandomState>,
     arguments: &mut Vec<Node<InputValueDefinition>>,
 ) {
     for arg in arguments {

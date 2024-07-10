@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::hash::Hash;
+use std::hash::Hasher;
 use std::ops::Deref;
 use std::sync::atomic;
 use std::sync::Arc;
@@ -233,10 +234,10 @@ mod selection_map {
     /// module to prevent code from accidentally mutating the underlying map outside the mutation
     /// API.
     #[derive(Debug, Clone, PartialEq, Eq, Default)]
-    pub(crate) struct SelectionMap(IndexMap<SelectionKey, Selection>);
+    pub(crate) struct SelectionMap(IndexMap<SelectionKey, Selection, ahash::RandomState>);
 
     impl Deref for SelectionMap {
-        type Target = IndexMap<SelectionKey, Selection>;
+        type Target = IndexMap<SelectionKey, Selection, ahash::RandomState>;
 
         fn deref(&self) -> &Self::Target {
             &self.0
@@ -245,7 +246,7 @@ mod selection_map {
 
     impl SelectionMap {
         pub(crate) fn new() -> Self {
-            SelectionMap(IndexMap::new())
+            SelectionMap(IndexMap::with_hasher(Default::default()))
         }
 
         pub(crate) fn clear(&mut self) {
@@ -347,7 +348,7 @@ mod selection_map {
             }
             let mut iter = self.0.iter();
             let mut enumerated = (&mut iter).enumerate();
-            let mut new_map: IndexMap<_, _>;
+            let mut new_map: IndexMap<_, _, ahash::RandomState>;
             loop {
                 let Some((index, (key, selection))) = enumerated.next() else {
                     return Ok(Cow::Borrowed(self));
@@ -578,11 +579,14 @@ mod selection_map {
     }
 
     impl IntoIterator for SelectionMap {
-        type Item = <IndexMap<SelectionKey, Selection> as IntoIterator>::Item;
-        type IntoIter = <IndexMap<SelectionKey, Selection> as IntoIterator>::IntoIter;
+        type Item = <IndexMap<SelectionKey, Selection, ahash::RandomState> as IntoIterator>::Item;
+        type IntoIter =
+            <IndexMap<SelectionKey, Selection, ahash::RandomState> as IntoIterator>::IntoIter;
 
         fn into_iter(self) -> Self::IntoIter {
-            <IndexMap<SelectionKey, Selection> as IntoIterator>::into_iter(self.0)
+            <IndexMap<SelectionKey, Selection, ahash::RandomState> as IntoIterator>::into_iter(
+                self.0,
+            )
         }
     }
 }
@@ -603,30 +607,154 @@ pub(crate) use selection_map::SelectionValue;
 /// * directives have to be applied in the same order
 /// * directive arguments order does not matter (they get automatically sorted by their names).
 /// * selection cannot specify @defer directive
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Eq)]
 pub(crate) enum SelectionKey {
     Field {
         /// The field alias (if specified) or field name in the resulting selection set.
         response_name: Name,
         /// directives applied on the field
         directives: Arc<executable::DirectiveList>,
+        // doesn't contain the discriminant.
+        // call Hash on SelectionKey instead
+        partial_hash: u64,
     },
     FragmentSpread {
         /// The name of the fragment.
         fragment_name: Name,
         /// Directives applied on the fragment spread (does not contain @defer).
         directives: Arc<executable::DirectiveList>,
+        // doesn't contain the discriminant.
+        // call Hash on SelectionKey instead
+        partial_hash: u64,
     },
     InlineFragment {
         /// The optional type condition of the fragment.
         type_condition: Option<Name>,
         /// Directives applied on the fragment spread (does not contain @defer).
         directives: Arc<executable::DirectiveList>,
+        // doesn't contain the discriminant.
+        // call Hash on SelectionKey instead
+        partial_hash: u64,
     },
     Defer {
         /// Unique selection ID used to distinguish deferred fragment spreads that cannot be merged.
         deferred_id: SelectionId,
+        partial_hash: u64,
     },
+}
+
+impl SelectionKey {
+    fn field(response_name: Name, directives: Arc<executable::DirectiveList>) -> Self {
+        let mut s = ahash::AHasher::default();
+        response_name.hash(&mut s);
+        directives.hash(&mut s);
+        Self::Field {
+            response_name,
+            directives,
+            partial_hash: s.finish(),
+        }
+    }
+    fn fragment_spread(fragment_name: Name, directives: Arc<executable::DirectiveList>) -> Self {
+        let mut s = ahash::AHasher::default();
+        fragment_name.hash(&mut s);
+        directives.hash(&mut s);
+        Self::FragmentSpread {
+            fragment_name,
+            directives,
+            partial_hash: s.finish(),
+        }
+    }
+
+    fn inline_fragment(
+        type_condition: Option<Name>,
+        directives: Arc<executable::DirectiveList>,
+    ) -> Self {
+        let mut s = ahash::AHasher::default();
+        type_condition.hash(&mut s);
+        directives.hash(&mut s);
+        Self::InlineFragment {
+            type_condition,
+            directives,
+            partial_hash: s.finish(),
+        }
+    }
+
+    fn defer(deferred_id: SelectionId) -> Self {
+        let mut s = ahash::AHasher::default();
+        deferred_id.hash(&mut s);
+        Self::Defer {
+            deferred_id,
+            partial_hash: s.finish(),
+        }
+    }
+}
+
+impl PartialEq for SelectionKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Field {
+                    partial_hash: l_hash,
+                    ..
+                },
+                Self::Field {
+                    partial_hash: r_hash,
+                    ..
+                },
+            ) => l_hash == r_hash,
+            (
+                Self::FragmentSpread {
+                    partial_hash: l_hash,
+                    ..
+                },
+                Self::FragmentSpread {
+                    partial_hash: r_hash,
+                    ..
+                },
+            ) => l_hash == r_hash,
+            (
+                Self::InlineFragment {
+                    partial_hash: l_hash,
+                    ..
+                },
+                Self::InlineFragment {
+                    partial_hash: r_hash,
+                    ..
+                },
+            ) => l_hash == r_hash,
+            (
+                Self::Defer {
+                    partial_hash: l_hash,
+                    ..
+                },
+                Self::Defer {
+                    partial_hash: r_hash,
+                    ..
+                },
+            ) => l_hash == r_hash,
+            _ => false,
+        }
+    }
+}
+
+impl Hash for SelectionKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            Self::Field { partial_hash, .. } => {
+                partial_hash.hash(state);
+            }
+            Self::FragmentSpread { partial_hash, .. } => {
+                partial_hash.hash(state);
+            }
+            Self::InlineFragment { partial_hash, .. } => {
+                partial_hash.hash(state);
+            }
+            Self::Defer { partial_hash, .. } => {
+                partial_hash.hash(state);
+            }
+        }
+    }
 }
 
 impl SelectionKey {
@@ -1398,10 +1526,7 @@ mod field_selection {
         fn key(&self) -> SelectionKey {
             let mut directives = self.directives.as_ref().clone();
             sort_directives(&mut directives);
-            SelectionKey::Field {
-                response_name: self.response_name(),
-                directives: Arc::new(directives),
-            }
+            SelectionKey::field(self.response_name(), Arc::new(directives))
         }
     }
 }
@@ -1512,16 +1637,11 @@ mod fragment_spread_selection {
     impl HasSelectionKey for FragmentSpreadData {
         fn key(&self) -> SelectionKey {
             if is_deferred_selection(&self.directives) {
-                SelectionKey::Defer {
-                    deferred_id: self.selection_id.clone(),
-                }
+                SelectionKey::defer(self.selection_id.clone())
             } else {
                 let mut directives = self.directives.as_ref().clone();
                 sort_directives(&mut directives);
-                SelectionKey::FragmentSpread {
-                    fragment_name: self.fragment_name.clone(),
-                    directives: Arc::new(directives),
-                }
+                SelectionKey::fragment_spread(self.fragment_name.clone(), Arc::new(directives))
             }
         }
     }
@@ -1839,19 +1959,16 @@ mod inline_fragment_selection {
     impl HasSelectionKey for InlineFragmentData {
         fn key(&self) -> SelectionKey {
             if is_deferred_selection(&self.directives) {
-                SelectionKey::Defer {
-                    deferred_id: self.selection_id.clone(),
-                }
+                SelectionKey::defer(self.selection_id.clone())
             } else {
                 let mut directives = self.directives.as_ref().clone();
                 sort_directives(&mut directives);
-                SelectionKey::InlineFragment {
-                    type_condition: self
-                        .type_condition_position
+                SelectionKey::inline_fragment(
+                    self.type_condition_position
                         .as_ref()
                         .map(|pos| pos.type_name().clone()),
-                    directives: Arc::new(directives),
-                }
+                    Arc::new(directives),
+                )
             }
         }
     }
@@ -1927,7 +2044,8 @@ impl SelectionSet {
     // overhead due to indirection, both from over allocation and from v-table lookups.
     pub(crate) fn split_top_level_fields(self) -> Box<dyn Iterator<Item = SelectionSet>> {
         let parent_type = self.type_position.clone();
-        let selections: IndexMap<SelectionKey, Selection> = (**self.selections).clone();
+        let selections: IndexMap<SelectionKey, Selection, ahash::RandomState> =
+            (**self.selections).clone();
         Box::new(selections.into_values().flat_map(move |sel| {
             let digest: Box<dyn Iterator<Item = SelectionSet>> = if sel.is_field() {
                 Box::new(std::iter::once(SelectionSet::from_selection(
@@ -2192,11 +2310,18 @@ impl SelectionSet {
         &mut self,
         others: impl Iterator<Item = &'op Selection>,
     ) -> Result<(), FederationError> {
-        let mut fields: IndexMap<SelectionKey, Vec<&Arc<FieldSelection>>> = IndexMap::new();
-        let mut fragment_spreads: IndexMap<SelectionKey, Vec<&Arc<FragmentSpreadSelection>>> =
-            IndexMap::new();
-        let mut inline_fragments: IndexMap<SelectionKey, Vec<&Arc<InlineFragmentSelection>>> =
-            IndexMap::new();
+        let mut fields: HashMap<SelectionKey, Vec<&Arc<FieldSelection>>, ahash::RandomState> =
+            HashMap::with_hasher(Default::default());
+        let mut fragment_spreads: HashMap<
+            SelectionKey,
+            Vec<&Arc<FragmentSpreadSelection>>,
+            ahash::RandomState,
+        > = HashMap::with_hasher(Default::default());
+        let mut inline_fragments: HashMap<
+            SelectionKey,
+            Vec<&Arc<InlineFragmentSelection>>,
+            ahash::RandomState,
+        > = HashMap::with_hasher(Default::default());
         let target = Arc::make_mut(&mut self.selections);
         for other_selection in others {
             let other_key = other_selection.key();
@@ -2265,18 +2390,14 @@ impl SelectionSet {
         for (key, self_selection) in target.iter_mut() {
             match self_selection {
                 SelectionValue::Field(mut self_field_selection) => {
-                    // todo: ask Renée why it used shift remove
-                    if let Some(other_field_selections) = fields.swap_remove(key) {
+                    if let Some(other_field_selections) = fields.remove(key) {
                         self_field_selection.merge_into(
                             other_field_selections.iter().map(|selection| &***selection),
                         )?;
                     }
                 }
                 SelectionValue::FragmentSpread(mut self_fragment_spread_selection) => {
-                    // todo: ask Renée why it used shift remove
-                    if let Some(other_fragment_spread_selections) =
-                        fragment_spreads.swap_remove(key)
-                    {
+                    if let Some(other_fragment_spread_selections) = fragment_spreads.remove(key) {
                         self_fragment_spread_selection.merge_into(
                             other_fragment_spread_selections
                                 .iter()
@@ -2286,9 +2407,7 @@ impl SelectionSet {
                 }
                 SelectionValue::InlineFragment(mut self_inline_fragment_selection) => {
                     // todo: ask Renée why it used shift remove
-                    if let Some(other_inline_fragment_selections) =
-                        inline_fragments.swap_remove(key)
-                    {
+                    if let Some(other_inline_fragment_selections) = inline_fragments.remove(key) {
                         self_inline_fragment_selection.merge_into(
                             other_inline_fragment_selections
                                 .iter()
@@ -2735,10 +2854,8 @@ impl SelectionSet {
         // XXX(@goto-bus-stop): Note this does *not* count `__typename @include(if: true)`.
         // This seems wrong? But it's what JS does, too.
         static TYPENAME_KEY: OnceLock<SelectionKey> = OnceLock::new();
-        let key = TYPENAME_KEY.get_or_init(|| SelectionKey::Field {
-            response_name: TYPENAME_FIELD,
-            directives: Arc::new(Default::default()),
-        });
+        let key = TYPENAME_KEY
+            .get_or_init(|| SelectionKey::field(TYPENAME_FIELD, Arc::new(Default::default())));
 
         self.selections.contains_key(key)
     }

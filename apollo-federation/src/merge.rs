@@ -281,7 +281,7 @@ impl Merger {
 
     fn merge_enum_type(
         &mut self,
-        types: &mut IndexMap<NamedType, ExtendedType>,
+        types: &mut IndexMap<NamedType, ExtendedType, ahash::RandomState>,
         subgraph_name: Name,
         enum_name: NamedType,
         enum_type: &Node<EnumType>,
@@ -326,7 +326,7 @@ impl Merger {
 
     fn merge_input_object_type(
         &mut self,
-        types: &mut IndexMap<NamedType, ExtendedType>,
+        types: &mut IndexMap<NamedType, ExtendedType, ahash::RandomState>,
         subgraph_name: Name,
         input_object_name: NamedType,
         input_object: &Node<InputObjectType>,
@@ -362,7 +362,7 @@ impl Merger {
 
     fn merge_interface_type(
         &mut self,
-        types: &mut IndexMap<NamedType, ExtendedType>,
+        types: &mut IndexMap<NamedType, ExtendedType, ahash::RandomState>,
         metadata: &Option<&LinksMetadata>,
         subgraph_name: Name,
         interface_name: NamedType,
@@ -413,7 +413,7 @@ impl Merger {
 
     fn merge_object_type(
         &mut self,
-        types: &mut IndexMap<NamedType, ExtendedType>,
+        types: &mut IndexMap<NamedType, ExtendedType, ahash::RandomState>,
         metadata: &Option<&LinksMetadata>,
         subgraph_name: Name,
         object_name: NamedType,
@@ -565,7 +565,7 @@ impl Merger {
 
     fn merge_union_type(
         &mut self,
-        types: &mut IndexMap<NamedType, ExtendedType>,
+        types: &mut IndexMap<NamedType, ExtendedType, ahash::RandomState>,
         subgraph_name: Name,
         union_name: NamedType,
         union: &Node<UnionType>,
@@ -601,7 +601,7 @@ impl Merger {
 
     fn merge_scalar_type(
         &self,
-        types: &mut IndexMap<Name, ExtendedType>,
+        types: &mut IndexMap<Name, ExtendedType, ahash::RandomState>,
         subgraph_name: Name,
         scalar_name: NamedType,
         ty: &Node<ScalarType>,
