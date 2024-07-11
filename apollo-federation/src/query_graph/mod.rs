@@ -25,11 +25,8 @@ use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::OutputTypeDefinitionPosition;
 use crate::schema::position::SchemaRootDefinitionKind;
 use crate::schema::ValidFederationSchema;
-
-use indexmap::IndexMap as IIM;
-use indexmap::IndexSet as IIS;
-type IndexSet<T> = IIS<T, ahash::RandomState>;
-type IndexMap<K, V> = IIM<K, V, ahash::RandomState>;
+use apollo_compiler::collections::fast::IndexMap;
+use apollo_compiler::collections::fast::IndexSet;
 
 pub mod build_query_graph;
 pub(crate) mod condition_resolver;

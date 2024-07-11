@@ -3,7 +3,7 @@ use std::sync::Arc;
 use apollo_compiler::name;
 use apollo_compiler::schema::Schema;
 use apollo_compiler::ExecutableDocument;
-use indexmap::IndexSet;
+use apollo_compiler::collections::fast::IndexSet;
 
 use super::normalize_operation;
 use super::Name;
@@ -109,7 +109,7 @@ type Foo {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         normalized_operation.named_fragments = Default::default();
@@ -163,7 +163,7 @@ type Foo {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         normalized_operation.named_fragments = Default::default();
@@ -204,7 +204,7 @@ type Query {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
 
@@ -239,7 +239,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test {
@@ -282,7 +282,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test($skipIf: Boolean!) {
@@ -328,7 +328,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test($skipIf: Boolean!) {
@@ -372,7 +372,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test($skipIf: Boolean!) {
@@ -418,7 +418,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test($skip1: Boolean!, $skip2: Boolean!) {
@@ -469,7 +469,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test {
@@ -535,7 +535,7 @@ type V {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test {
@@ -594,7 +594,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test {
@@ -640,7 +640,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test($skipIf: Boolean!) {
@@ -690,7 +690,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test($skipIf: Boolean!) {
@@ -738,7 +738,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test($skipIf: Boolean!) {
@@ -786,7 +786,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test($skip1: Boolean!, $skip2: Boolean!) {
@@ -838,7 +838,7 @@ type T {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test {
@@ -906,7 +906,7 @@ type V {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query Test {
@@ -952,7 +952,7 @@ type Foo {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query TestQuery {
@@ -991,7 +991,7 @@ type Foo {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         let expected = r#"query TestQuery {
@@ -1032,7 +1032,7 @@ scalar FieldSet
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_with_intf_object_typename);
     if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-        let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> = IndexSet::new();
+        let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> = IndexSet::with_hasher(Default::default());
         interface_objects.insert(InterfaceTypeDefinitionPosition {
             type_name: name!("Foo"),
         });
@@ -1553,7 +1553,7 @@ fn test_expand_all_fragments1() {
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
             &schema,
-            &IndexSet::new(),
+            &IndexSet::with_hasher(Default::default()),
         )
         .unwrap();
         normalized_operation.named_fragments = Default::default();

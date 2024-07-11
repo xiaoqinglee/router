@@ -13,8 +13,6 @@
 //! [`Field`], and the selection type is [`FieldSelection`].
 
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::hash::Hash;
@@ -29,8 +27,10 @@ use apollo_compiler::name;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Name;
 use apollo_compiler::Node;
-use indexmap::IndexMap;
-use indexmap::IndexSet;
+use apollo_compiler::collections::fast::IndexMap;
+use apollo_compiler::collections::fast::HashMap;
+use apollo_compiler::collections::fast::HashSet;
+use apollo_compiler::collections::fast::IndexSet;
 
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
@@ -146,8 +146,8 @@ impl Operation {
         NormalizedDefer {
             operation: self,
             has_defers: false,
-            assigned_defer_labels: HashSet::new(),
-            defer_conditions: IndexMap::new(),
+            assigned_defer_labels: HashSet::with_hasher(Default::default()),
+            defer_conditions: IndexMap::with_hasher(Default::default()),
         }
         // TODO(@TylerBloom): Once defer is implement, the above statement needs to be replaced
         // with the commented-out one below. This is part of FED-95
@@ -158,8 +158,8 @@ impl Operation {
             NormalizedDefer {
                 operation: self,
                 has_defers: false,
-                assigned_defer_labels: HashSet::new(),
-                defer_conditions: IndexMap::new(),
+                assigned_defer_labels: HashSet::with_hasher(Default::default()),
+                defer_conditions: IndexMap::with_hasher(Default::default()),
             }
         }
         */
@@ -210,7 +210,7 @@ mod selection_map {
     use std::sync::Arc;
 
     use apollo_compiler::executable;
-    use indexmap::IndexMap;
+    use apollo_compiler::collections::fast::IndexMap;
 
     use crate::error::FederationError;
     use crate::error::SingleFederationError::Internal;
@@ -234,10 +234,10 @@ mod selection_map {
     /// module to prevent code from accidentally mutating the underlying map outside the mutation
     /// API.
     #[derive(Debug, Clone, PartialEq, Eq, Default)]
-    pub(crate) struct SelectionMap(IndexMap<SelectionKey, Selection, ahash::RandomState>);
+    pub(crate) struct SelectionMap(IndexMap<SelectionKey, Selection>);
 
     impl Deref for SelectionMap {
-        type Target = IndexMap<SelectionKey, Selection, ahash::RandomState>;
+        type Target = IndexMap<SelectionKey, Selection>;
 
         fn deref(&self) -> &Self::Target {
             &self.0
@@ -348,7 +348,7 @@ mod selection_map {
             }
             let mut iter = self.0.iter();
             let mut enumerated = (&mut iter).enumerate();
-            let mut new_map: IndexMap<_, _, ahash::RandomState>;
+            let mut new_map: IndexMap<_, _>;
             loop {
                 let Some((index, (key, selection))) = enumerated.next() else {
                     return Ok(Cow::Borrowed(self));
@@ -579,12 +579,12 @@ mod selection_map {
     }
 
     impl IntoIterator for SelectionMap {
-        type Item = <IndexMap<SelectionKey, Selection, ahash::RandomState> as IntoIterator>::Item;
+        type Item = <IndexMap<SelectionKey, Selection> as IntoIterator>::Item;
         type IntoIter =
-            <IndexMap<SelectionKey, Selection, ahash::RandomState> as IntoIterator>::IntoIter;
+            <IndexMap<SelectionKey, Selection> as IntoIterator>::IntoIter;
 
         fn into_iter(self) -> Self::IntoIter {
-            <IndexMap<SelectionKey, Selection, ahash::RandomState> as IntoIterator>::into_iter(
+            <IndexMap<SelectionKey, Selection> as IntoIterator>::into_iter(
                 self.0,
             )
         }
@@ -1158,7 +1158,7 @@ impl Fragment {
 
     // PORT NOTE: in JS code this is stored on the fragment
     pub(crate) fn fragment_usages(&self) -> HashMap<Name, i32> {
-        let mut usages = HashMap::new();
+        let mut usages = HashMap::with_hasher(Default::default());
         self.selection_set.collect_used_fragment_names(&mut usages);
         usages
     }
@@ -1174,12 +1174,12 @@ impl Fragment {
 }
 
 mod field_selection {
-    use std::collections::HashSet;
     use std::hash::Hash;
     use std::hash::Hasher;
     use std::ops::Deref;
     use std::sync::Arc;
-
+    
+    use apollo_compiler::collections::fast::HashSet;
     use apollo_compiler::ast;
     use apollo_compiler::executable;
     use apollo_compiler::Name;
@@ -1762,12 +1762,12 @@ impl FragmentSpreadData {
 }
 
 mod inline_fragment_selection {
-    use std::collections::HashSet;
     use std::hash::Hash;
     use std::hash::Hasher;
     use std::ops::Deref;
     use std::sync::Arc;
-
+    
+    use apollo_compiler::collections::fast::HashSet;
     use apollo_compiler::executable;
     use apollo_compiler::Name;
 
@@ -1997,7 +1997,7 @@ where
     K: Eq + Hash,
 {
     fn new() -> Self {
-        Self(IndexMap::new())
+        Self(IndexMap::with_hasher(Default::default()))
     }
 
     fn insert(&mut self, key: K, value: V) {
@@ -2044,7 +2044,7 @@ impl SelectionSet {
     // overhead due to indirection, both from over allocation and from v-table lookups.
     pub(crate) fn split_top_level_fields(self) -> Box<dyn Iterator<Item = SelectionSet>> {
         let parent_type = self.type_position.clone();
-        let selections: IndexMap<SelectionKey, Selection, ahash::RandomState> =
+        let selections: IndexMap<SelectionKey, Selection> =
             (**self.selections).clone();
         Box::new(selections.into_values().flat_map(move |sel| {
             let digest: Box<dyn Iterator<Item = SelectionSet>> = if sel.is_field() {
@@ -2311,17 +2311,15 @@ impl SelectionSet {
         &mut self,
         others: impl Iterator<Item = &'op Selection>,
     ) -> Result<(), FederationError> {
-        let mut fields: HashMap<SelectionKey, Vec<&Arc<FieldSelection>>, ahash::RandomState> =
+        let mut fields: HashMap<SelectionKey, Vec<&Arc<FieldSelection>>> =
             HashMap::with_hasher(Default::default());
         let mut fragment_spreads: HashMap<
             SelectionKey,
-            Vec<&Arc<FragmentSpreadSelection>>,
-            ahash::RandomState,
+            Vec<&Arc<FragmentSpreadSelection>>
         > = HashMap::with_hasher(Default::default());
         let mut inline_fragments: HashMap<
             SelectionKey,
             Vec<&Arc<InlineFragmentSelection>>,
-            ahash::RandomState,
         > = HashMap::with_hasher(Default::default());
         let target = Arc::make_mut(&mut self.selections);
         for other_selection in others {
@@ -3101,7 +3099,7 @@ impl SelectionSet {
             return Ok(self.clone());
         }
 
-        let mut at_current_level: HashMap<FetchDataPathElement, &FieldToAlias> = HashMap::new();
+        let mut at_current_level: HashMap<FetchDataPathElement, &FieldToAlias> = HashMap::with_hasher(Default::default());
         let mut remaining: Vec<&FieldToAlias> = Vec::new();
 
         for alias in aliases {
@@ -3226,7 +3224,7 @@ impl SelectionSet {
     }
 
     pub(crate) fn used_variables(&self) -> Result<Vec<Name>, FederationError> {
-        let mut variables = HashSet::new();
+        let mut variables = HashSet::with_hasher(Default::default());
         self.collect_variables(&mut variables)?;
         let mut res: Vec<Name> = variables.into_iter().cloned().collect();
         res.sort();
@@ -3409,7 +3407,7 @@ fn compute_aliases_for_non_merging_fields(
     alias_collector: &mut Vec<FieldToAlias>,
     schema: &ValidFederationSchema,
 ) -> Result<(), FederationError> {
-    let mut seen_response_names: HashMap<Name, SeenResponseName> = HashMap::new();
+    let mut seen_response_names: HashMap<Name, SeenResponseName> = HashMap::with_hasher(Default::default());
 
     // - `s.selections` must be fragment-spread-free.
     fn rebased_fields_in_set(s: &SelectionSetAtPath) -> impl Iterator<Item = FieldInPath> + '_ {
@@ -3970,7 +3968,7 @@ pub(crate) struct NamedFragments {
 
 impl NamedFragments {
     pub(crate) fn new(
-        fragments: &IndexMap<Name, Node<executable::Fragment>, ahash::RandomState>,
+        fragments: &IndexMap<Name, Node<executable::Fragment>>,
         schema: &ValidFederationSchema,
     ) -> NamedFragments {
         // JS PORT - In order to normalize Fragments we need to process them in dependency order.
@@ -4049,7 +4047,7 @@ impl NamedFragments {
     /// We normalize passed in fragments in their dependency order, i.e. if a fragment A uses another fragment B, then we will
     /// normalize B _before_ attempting to normalize A. Normalized fragments have access to previously normalized fragments.
     fn initialize_in_dependency_order(
-        fragments: &IndexMap<Name, Node<executable::Fragment>, ahash::RandomState>,
+        fragments: &IndexMap<Name, Node<executable::Fragment>>,
         schema: &ValidFederationSchema,
     ) -> NamedFragments {
         struct FragmentDependencies {
@@ -4059,9 +4057,9 @@ impl NamedFragments {
 
         // Note: We use IndexMap to stabilize the ordering of the result, which influences
         //       the outcome of `map_to_expanded_selection_sets`.
-        let mut fragments_map: IndexMap<Name, FragmentDependencies> = IndexMap::new();
+        let mut fragments_map: IndexMap<Name, FragmentDependencies> = IndexMap::with_hasher(Default::default());
         for fragment in fragments.values() {
-            let mut fragment_usages: HashMap<Name, i32> = HashMap::new();
+            let mut fragment_usages: HashMap<Name, i32> = HashMap::with_hasher(Default::default());
             NamedFragments::collect_fragment_usages(&fragment.selection_set, &mut fragment_usages);
             let usages: Vec<Name> = fragment_usages.keys().cloned().collect::<Vec<Name>>();
             fragments_map.insert(
@@ -4073,7 +4071,7 @@ impl NamedFragments {
             );
         }
 
-        let mut removed_fragments: HashSet<Name> = HashSet::new();
+        let mut removed_fragments: HashSet<Name> = HashSet::with_hasher(Default::default());
         let mut mapped_fragments = NamedFragments::default();
         while !fragments_map.is_empty() {
             // Note that graphQL specifies that named fragments cannot have cycles (https://spec.graphql.org/draft/#sec-Fragment-spreads-must-not-form-cycles)
@@ -4181,7 +4179,7 @@ impl RebasedFragments {
     pub(crate) fn new(fragments: NamedFragments) -> Self {
         Self {
             original_fragments: fragments,
-            rebased_fragments: Arc::new(HashMap::new()),
+            rebased_fragments: Arc::new(HashMap::with_hasher(Default::default())),
         }
     }
 
@@ -4371,7 +4369,7 @@ impl TryFrom<Operation> for Valid<executable::ExecutableDocument> {
                     Node::new(executable::Fragment::try_from(&**fragment)?),
                 ))
             })
-            .collect::<Result<IndexMap<_, _, ahash::RandomState>, FederationError>>()?;
+            .collect::<Result<IndexMap<_, _>, FederationError>>()?;
 
         let mut document = executable::ExecutableDocument::new();
         document.fragments = fragments;

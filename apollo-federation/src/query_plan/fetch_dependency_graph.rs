@@ -2536,7 +2536,7 @@ fn operation_for_entities_fetch(
     let mut variable_definitions: Vec<Node<VariableDefinition>> =
         Vec::with_capacity(all_variable_definitions.len() + 1);
     variable_definitions.push(representations_variable_definition(subgraph_schema)?);
-    let mut used_variables = HashSet::new();
+    let mut used_variables = HashSet::with_hasher(Default::default());
     selection_set.collect_variables(&mut used_variables)?;
     variable_definitions.extend(
         all_variable_definitions
@@ -2620,7 +2620,7 @@ fn operation_for_query_fetch(
     variable_definitions: &[Node<VariableDefinition>],
     operation_name: &Option<Name>,
 ) -> Result<Operation, FederationError> {
-    let mut used_variables = HashSet::new();
+    let mut used_variables = HashSet::with_hasher(Default::default());
     selection_set.collect_variables(&mut used_variables)?;
     let variable_definitions = variable_definitions
         .iter()

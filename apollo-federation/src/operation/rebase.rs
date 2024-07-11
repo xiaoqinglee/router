@@ -841,7 +841,7 @@ impl NamedFragments {
 #[cfg(test)]
 mod tests {
     use apollo_compiler::name;
-    use indexmap::IndexSet;
+    use apollo_compiler::collections::fast::IndexSet;
 
     use crate::operation::normalize_operation;
     use crate::operation::tests::parse_schema_and_operation;
@@ -902,7 +902,7 @@ type U {
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
                 &schema,
-                &IndexSet::new(),
+                &IndexSet::with_hasher(Default::default()),
             )
             .unwrap();
 
@@ -988,7 +988,7 @@ type U {
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
                 &schema,
-                &IndexSet::new(),
+                &IndexSet::with_hasher(Default::default()),
             )
             .unwrap();
 
@@ -1070,7 +1070,7 @@ type T2 implements I {
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
                 &schema,
-                &IndexSet::new(),
+                &IndexSet::with_hasher(Default::default()),
             )
             .unwrap();
 
@@ -1143,7 +1143,7 @@ type T implements I {
         );
 
         if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-            let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> = IndexSet::new();
+            let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> = IndexSet::with_hasher(Default::default());
             interface_objects.insert(InterfaceTypeDefinitionPosition {
                 type_name: name!("I"),
             });
@@ -1245,7 +1245,7 @@ type T {
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
                 &schema,
-                &IndexSet::new(),
+                &IndexSet::with_hasher(Default::default()),
             )
             .unwrap();
 
@@ -1323,7 +1323,7 @@ type U {
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
                 &schema,
-                &IndexSet::new(),
+                &IndexSet::with_hasher(Default::default()),
             )
             .unwrap();
 
@@ -1396,7 +1396,7 @@ type T implements I {
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
                 &schema,
-                &IndexSet::new(),
+                &IndexSet::with_hasher(Default::default()),
             )
             .unwrap();
 

@@ -35,11 +35,11 @@
 //! ## `reuse_fragments` methods (putting everything together)
 //! Recursive optimization of selection and selection sets.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::ops::Not;
 use std::sync::Arc;
 
+use apollo_compiler::collections::fast::HashMap;
+use apollo_compiler::collections::fast::HashSet;
 use apollo_compiler::executable;
 use apollo_compiler::Name;
 use apollo_compiler::Node;
@@ -377,7 +377,7 @@ impl FieldsConflictValidator {
 
     fn for_level<'a>(level: &[&'a SelectionSet]) -> Self {
         // Group `level`'s fields by the response-name/field
-        let mut at_level: HashMap<Name, HashMap<Field, Vec<&'a SelectionSet>>> = HashMap::new();
+        let mut at_level: HashMap<Name, HashMap<Field, Vec<&'a SelectionSet>>> = HashMap::with_hasher(Default::default());
         for selection_set in level {
             for field_selection in selection_set.field_selections() {
                 let response_name = field_selection.field.response_name();
@@ -392,10 +392,10 @@ impl FieldsConflictValidator {
         }
 
         // Collect validators per response-name/field
-        let mut by_response_name = HashMap::new();
+        let mut by_response_name = HashMap::with_hasher(Default::default());
         for (response_name, fields) in at_level {
             let mut at_response_name: HashMap<Field, Option<Arc<FieldsConflictValidator>>> =
-                HashMap::new();
+                HashMap::with_hasher(Default::default());
             for (field, selection_sets) in fields {
                 if selection_sets.is_empty() {
                     at_response_name.insert(field, None);
@@ -1128,7 +1128,7 @@ impl NamedFragments {
         min_usage_to_optimize: i32,
     ) -> Result<SelectionSet, FederationError> {
         // Initial computation of fragment usages in `selection_set`.
-        let mut usages = HashMap::new();
+        let mut usages = HashMap::with_hasher(Default::default());
         selection_set.collect_used_fragment_names(&mut usages);
 
         // Short-circuiting: Nothing was used => Drop everything (selection_set is unchanged).
@@ -1205,7 +1205,7 @@ impl NamedFragments {
     }
 
     fn update_usages(usages: &mut HashMap<Name, i32>, fragment: &Node<Fragment>, usage_count: i32) {
-        let mut inner_usages = HashMap::new();
+        let mut inner_usages = HashMap::with_hasher(Default::default());
         fragment.collect_used_fragment_names(&mut inner_usages);
 
         for (name, inner_count) in inner_usages {

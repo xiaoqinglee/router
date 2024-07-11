@@ -2,11 +2,12 @@ use std::cell::Cell;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+
+use apollo_compiler::collections::fast::IndexMap;
+use apollo_compiler::collections::fast::IndexSet;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::ExecutableDocument;
 use apollo_compiler::Name;
-use indexmap::IndexMap;
-use indexmap::IndexSet;
 use itertools::Itertools;
 use petgraph::csr::NodeIndex;
 use petgraph::stable_graph::IndexType;
@@ -308,7 +309,7 @@ impl QueryPlanner {
 
     pub fn subgraph_schemas(
         &self,
-    ) -> &IndexMap<Arc<str>, ValidFederationSchema, ahash::RandomState> {
+    ) -> &IndexMap<Arc<str>, ValidFederationSchema> {
         self.federated_query_graph.subgraph_schemas()
     }
 
