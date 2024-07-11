@@ -2311,16 +2311,16 @@ impl SelectionSet {
         &mut self,
         others: impl Iterator<Item = &'op Selection>,
     ) -> Result<(), FederationError> {
-        let mut fields: HashMap<SelectionKey, Vec<&Arc<FieldSelection>>> =
-            HashMap::with_hasher(Default::default());
-        let mut fragment_spreads: HashMap<
+        let mut fields: IndexMap<SelectionKey, Vec<&Arc<FieldSelection>>> =
+        IndexMap::with_hasher(Default::default());
+        let mut fragment_spreads: IndexMap<
             SelectionKey,
             Vec<&Arc<FragmentSpreadSelection>>
-        > = HashMap::with_hasher(Default::default());
-        let mut inline_fragments: HashMap<
+        > = IndexMap::with_hasher(Default::default());
+        let mut inline_fragments: IndexMap<
             SelectionKey,
             Vec<&Arc<InlineFragmentSelection>>,
-        > = HashMap::with_hasher(Default::default());
+        > = IndexMap::with_hasher(Default::default());
         let target = Arc::make_mut(&mut self.selections);
         for other_selection in others {
             let other_key = other_selection.key();
@@ -2389,14 +2389,14 @@ impl SelectionSet {
         for (key, self_selection) in target.iter_mut() {
             match self_selection {
                 SelectionValue::Field(mut self_field_selection) => {
-                    if let Some(other_field_selections) = fields.remove(key) {
+                    if let Some(other_field_selections) = fields.shift_remove(key) {
                         self_field_selection.merge_into(
                             other_field_selections.iter().map(|selection| &***selection),
                         )?;
                     }
                 }
                 SelectionValue::FragmentSpread(mut self_fragment_spread_selection) => {
-                    if let Some(other_fragment_spread_selections) = fragment_spreads.remove(key) {
+                    if let Some(other_fragment_spread_selections) = fragment_spreads.shift_remove(key) {
                         self_fragment_spread_selection.merge_into(
                             other_fragment_spread_selections
                                 .iter()
@@ -2405,8 +2405,7 @@ impl SelectionSet {
                     }
                 }
                 SelectionValue::InlineFragment(mut self_inline_fragment_selection) => {
-                    // todo: ask Renée why it used shift remove
-                    if let Some(other_inline_fragment_selections) = inline_fragments.remove(key) {
+                    if let Some(other_inline_fragment_selections) = inline_fragments.shift_remove(key) {
                         self_inline_fragment_selection.merge_into(
                             other_inline_fragment_selections
                                 .iter()

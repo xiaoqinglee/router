@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::iter;
 use std::ops::Deref;
@@ -7,6 +5,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
+use apollo_compiler::collections::fast::HashMap;
+use apollo_compiler::collections::fast::HashSet;
 use apollo_compiler::ast::Argument;
 use apollo_compiler::ast::Directive;
 use apollo_compiler::ast::OperationType;
@@ -896,8 +896,8 @@ impl FetchDependencyGraph {
     fn collect_redundant_edges(
         &self,
         node_index: NodeIndex,
-        acc: &mut HashSet<EdgeIndex, ahash::RandomState>,
-        visited: &mut HashSet<NodeIndex, ahash::RandomState>,
+        acc: &mut HashSet<EdgeIndex>,
+        visited: &mut HashSet<NodeIndex>,
     ) {
         let mut stack = vec![];
         for start_index in self.children_of(node_index) {
@@ -906,9 +906,6 @@ impl FetchDependencyGraph {
             }
             stack.extend(self.children_of(start_index));
             while let Some(v) = stack.pop() {
-                if !visited.insert(start_index) {
-                    continue;
-                }
                 for edge in self.graph.edges_connecting(node_index, v) {
                     acc.insert(edge.id());
                 }
