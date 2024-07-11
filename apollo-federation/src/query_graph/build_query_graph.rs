@@ -1,19 +1,17 @@
 use std::sync::Arc;
 
+use apollo_compiler::collections::fast::IndexMap;
+use apollo_compiler::collections::fast::IndexSet;
 use apollo_compiler::schema::DirectiveList as ComponentDirectiveList;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Name;
 use apollo_compiler::Schema;
-use indexmap::IndexMap;
-use indexmap::IndexSet as IIS;
 use petgraph::graph::EdgeIndex;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use strum::IntoEnumIterator;
-
-type IndexSet<T> = IIS<T, ahash::RandomState>;
 
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
@@ -1955,7 +1953,7 @@ struct FederatedQueryGraphBuilderSubgraphs {
 impl FederatedQueryGraphBuilderSubgraphs {
     fn new(base: &BaseQueryGraphBuilder) -> Result<Self, FederationError> {
         let mut subgraphs = FederatedQueryGraphBuilderSubgraphs {
-            map: IndexMap::new(),
+            map: IndexMap::with_hasher(Default::default()),
         };
         for (source, schema) in &base.query_graph.sources {
             if *source == base.query_graph.current_source {

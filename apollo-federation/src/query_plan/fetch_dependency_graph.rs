@@ -166,7 +166,8 @@ pub(crate) struct FetchSelectionSet {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FetchInputs {
     /// The selection sets to be used as input to `_entities`, separated per parent type.
-    selection_sets_per_parent_type: IndexMap<CompositeTypeDefinitionPosition, Arc<SelectionSet>, ahash::RandomState>,
+    selection_sets_per_parent_type:
+        IndexMap<CompositeTypeDefinitionPosition, Arc<SelectionSet>, ahash::RandomState>,
     /// The supergraph schema (primarily used for validation of added selection sets).
     supergraph_schema: ValidFederationSchema,
 }
@@ -923,7 +924,11 @@ impl FetchDependencyGraph {
     /// direct child is removed, as we know it is also reachable through the deeply nested route.
     fn remove_redundant_edges(&mut self, node_index: NodeIndex) {
         let mut redundant_edges = HashSet::with_hasher(Default::default());
-        self.collect_redundant_edges(node_index, &mut redundant_edges, &mut HashSet::with_hasher(Default::default()));
+        self.collect_redundant_edges(
+            node_index,
+            &mut redundant_edges,
+            &mut HashSet::with_hasher(Default::default()),
+        );
 
         for edge in redundant_edges {
             self.graph.remove_edge(edge);

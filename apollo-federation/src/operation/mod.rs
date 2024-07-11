@@ -2131,7 +2131,8 @@ impl SelectionSet {
             type_position.type_name().clone(),
             source_text,
         )?;
-        let named_fragments = NamedFragments::new(&IndexMap::new(), &schema);
+        let named_fragments =
+            NamedFragments::new(&IndexMap::with_hasher(Default::default()), &schema);
         SelectionSet::from_selection_set(&selection_set, &named_fragments, &schema)
     }
 

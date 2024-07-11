@@ -28,6 +28,7 @@ strum = "0.26.0"
 strum_macros = "0.26.0"
 thiserror = "1.0"
 url = "2"
+ahash = "0.8.11"
 
 [dev-dependencies]
 hex.workspace = true

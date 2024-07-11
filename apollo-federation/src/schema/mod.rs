@@ -155,7 +155,9 @@ impl FederationSchema {
         composite_type_definition_position: CompositeTypeDefinitionPosition,
     ) -> Result<IndexSet<ObjectTypeDefinitionPosition, ahash::RandomState>, FederationError> {
         Ok(match composite_type_definition_position {
-            CompositeTypeDefinitionPosition::Object(pos) => IndexSet::from_iter(std::iter::once(pos)),
+            CompositeTypeDefinitionPosition::Object(pos) => {
+                IndexSet::from_iter(std::iter::once(pos))
+            }
             CompositeTypeDefinitionPosition::Interface(pos) => self
                 .referencers()
                 .get_interface_type(&pos.type_name)?

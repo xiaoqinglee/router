@@ -9,6 +9,8 @@ use std::sync::atomic;
 use std::sync::Arc;
 
 use apollo_compiler::ast::Value;
+use apollo_compiler::collections::fast::IndexMap;
+use apollo_compiler::collections::fast::IndexSet;
 use apollo_compiler::executable::DirectiveList;
 use petgraph::graph::EdgeIndex;
 use petgraph::graph::NodeIndex;
@@ -50,11 +52,6 @@ use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::OutputTypeDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
-
-use indexmap::IndexMap as IIM;
-use indexmap::IndexSet as IIS;
-type IndexSet<T> = IIS<T, ahash::RandomState>;
-type IndexMap<K,V> = IIM<K, V, ahash::RandomState>;
 
 /// An immutable path in a query graph.
 ///
@@ -1424,7 +1421,7 @@ where
         type BestPathInfo<TTrigger, TEdge> =
             Option<(Arc<GraphPath<TTrigger, TEdge>>, QueryPlanCost)>;
         let mut best_path_by_source: IndexMap<Arc<str>, BestPathInfo<TTrigger, TEdge>> =
-        IndexMap::with_hasher(Default::default());
+            IndexMap::with_hasher(Default::default());
         let dead_ends = vec![];
         // Note that through `excluded` we avoid taking the same edge from multiple options. But
         // that means it's important we try the smallest paths first. That is, if we could in theory
@@ -2541,7 +2538,9 @@ impl OpGraphPath {
                                     )
                                 ));
                             }
-                            Arc::new(IndexSet::from_iter(std::iter::once(field_parent_pos.clone())))
+                            Arc::new(IndexSet::from_iter(std::iter::once(
+                                field_parent_pos.clone(),
+                            )))
                         } else {
                             self.runtime_types_of_tail.clone()
                         };

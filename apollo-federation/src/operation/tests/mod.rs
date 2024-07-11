@@ -1117,15 +1117,13 @@ fn converting_operation_types() {
 }
 
 fn contains_field(ss: &SelectionSet, field_name: Name) -> bool {
-    ss.selections.contains_key(&SelectionKey::Field {
-        response_name: field_name,
-        directives: Default::default(),
-    })
+    ss.selections
+        .contains_key(&SelectionKey::field(field_name, Default::default()))
 }
 
 fn is_named_field(sk: &SelectionKey, name: Name) -> bool {
     matches!(sk,
-            SelectionKey::Field { response_name, directives: _ }
+            SelectionKey::Field { response_name, .. }
                 if *response_name == name)
 }
 
@@ -1134,10 +1132,9 @@ fn get_value_at_path<'a>(ss: &'a SelectionSet, path: &[Name]) -> Option<&'a Sele
         // Error: empty path
         return None;
     };
-    let result = ss.selections.get(&SelectionKey::Field {
-        response_name: (*first).clone(),
-        directives: Default::default(),
-    });
+    let result = ss
+        .selections
+        .get(&SelectionKey::field((*first).clone(), Default::default()));
     let Some(value) = result else {
         // Error: No matching field found.
         return None;

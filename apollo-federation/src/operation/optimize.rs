@@ -3153,10 +3153,8 @@ mod tests {
                 }
 
                 Some((first, rest)) => {
-                    let result = Arc::make_mut(&mut ss.selections).get_mut(&SelectionKey::Field {
-                        response_name: (*first).clone(),
-                        directives: Default::default(),
-                    });
+                    let result = Arc::make_mut(&mut ss.selections)
+                        .get_mut(&SelectionKey::field((*first).clone(), Default::default()));
                     let Some(mut value) = result else {
                         return Err(FederationError::internal("No matching field found"));
                     };

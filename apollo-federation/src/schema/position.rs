@@ -6097,8 +6097,10 @@ impl FederationSchema {
         let metadata = links_metadata(&schema)?;
         let mut referencers: Referencers = Default::default();
 
-        let mut union_members: HashMap<NamedType, IndexSet<ObjectTypeDefinitionPosition, ahash::RandomState>> =
-            Default::default();
+        let mut union_members: HashMap<
+            NamedType,
+            IndexSet<ObjectTypeDefinitionPosition, ahash::RandomState>,
+        > = Default::default();
         // Shallow pass to populate referencers for types/directives.
         for (type_name, type_) in schema.types.iter() {
             match type_ {

@@ -5,6 +5,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use apollo_compiler::ast::FieldDefinition;
+use apollo_compiler::collections::fast::IndexMap;
+use apollo_compiler::collections::fast::IndexSet;
 use apollo_compiler::executable;
 use apollo_compiler::name;
 use apollo_compiler::schema::Component;
@@ -29,8 +31,6 @@ use apollo_compiler::schema::UnionType;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Name;
 use apollo_compiler::Node;
-use indexmap::IndexMap;
-use indexmap::IndexSet;
 use lazy_static::lazy_static;
 use time::OffsetDateTime;
 
@@ -179,8 +179,8 @@ fn collect_empty_subgraphs(
     let graph_directive_definition =
         join_spec_definition.graph_directive_definition(supergraph_schema)?;
     let graph_enum = join_spec_definition.graph_enum_definition(supergraph_schema)?;
-    let mut federation_spec_definitions = IndexMap::new();
-    let mut graph_enum_value_name_to_subgraph_name = IndexMap::new();
+    let mut federation_spec_definitions = IndexMap::with_hasher(Default::default());
+    let mut graph_enum_value_name_to_subgraph_name = IndexMap::with_hasher(Default::default());
     for (enum_value_name, enum_value_definition) in graph_enum.values.iter() {
         let graph_application = enum_value_definition
             .directives
@@ -505,7 +505,7 @@ fn add_empty_type(
     }
     let mut type_info = TypeInfo {
         name: type_definition_position.type_name().clone(),
-        subgraph_info: IndexMap::new(),
+        subgraph_info: IndexMap::with_hasher(Default::default()),
     };
     for type_directive_application in type_directive_applications {
         let subgraph = get_subgraph(
@@ -1549,7 +1549,7 @@ impl IntoIterator for ValidFederationSubgraphs {
 
 lazy_static! {
     static ref EXECUTABLE_DIRECTIVE_LOCATIONS: IndexSet<DirectiveLocation> = {
-        IndexSet::from([
+        IndexSet::from_iter([
             DirectiveLocation::Query,
             DirectiveLocation::Mutation,
             DirectiveLocation::Subscription,
