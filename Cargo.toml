@@ -49,7 +49,7 @@ debug = 1
 # Dependencies used in more than one place are specified here in order to keep versions in sync:
 # https://doc.rust-lang.org/cargo/reference/workspaces.html#the-dependencies-table
 [workspace.dependencies]
-apollo-compiler = { path = "../apollo-rs/crates/apollo-compiler"}
+apollo-compiler = { git = "https://github.com/apollographql/apollo-rs", branch = "igni/tryouts"} #{ path = "../apollo-rs/crates/apollo-compiler"}
 apollo-parser = "0.7.6"
 apollo-smith = { version = "0.5.0", features = ["parser-impl"] }
 async-trait = "0.1.77"

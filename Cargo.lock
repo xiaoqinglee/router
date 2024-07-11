@@ -395,23 +395,6 @@ checksum = "b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da"
 [[package]]
 name = "apollo-compiler"
 version = "1.0.0-beta.18"
-dependencies = [
- "ahash",
- "apollo-parser 0.7.7",
- "ariadne",
- "indexmap 2.2.6",
- "rowan",
- "serde",
- "serde_json_bytes",
- "thiserror",
- "triomphe",
- "typed-arena",
- "uuid",
-]
-
-[[package]]
-name = "apollo-compiler"
-version = "1.0.0-beta.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16a61580d9ee85ec35b892efb1f3eec193c520fc957b612989dc823551e2639d"
 dependencies = [
@@ -423,6 +406,24 @@ dependencies = [
  "serde_json_bytes",
  "thiserror",
  "triomphe",
+ "uuid",
+]
+
+[[package]]
+name = "apollo-compiler"
+version = "1.0.0-beta.18"
+source = "git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts#ea069c1502aca0a9c0ccf5b43f1844c50364871f"
+dependencies = [
+ "ahash",
+ "apollo-parser 0.7.7 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
+ "ariadne",
+ "indexmap 2.2.6",
+ "rowan",
+ "serde",
+ "serde_json_bytes",
+ "thiserror",
+ "triomphe",
+ "typed-arena",
  "uuid",
 ]
 
@@ -441,7 +442,7 @@ name = "apollo-federation"
 version = "1.50.0"
 dependencies = [
  "ahash",
- "apollo-compiler 1.0.0-beta.18",
+ "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
  "derive_more",
  "hex",
  "indexmap 2.2.6",
@@ -467,18 +468,9 @@ dependencies = [
 name = "apollo-federation-cli"
 version = "0.1.0"
 dependencies = [
- "apollo-compiler 1.0.0-beta.18",
+ "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
  "apollo-federation",
  "clap",
-]
-
-[[package]]
-name = "apollo-parser"
-version = "0.7.7"
-dependencies = [
- "memchr",
- "rowan",
- "thiserror",
 ]
 
 [[package]]
@@ -493,12 +485,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "apollo-parser"
+version = "0.7.7"
+source = "git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts#ea069c1502aca0a9c0ccf5b43f1844c50364871f"
+dependencies = [
+ "memchr",
+ "rowan",
+ "thiserror",
+]
+
+[[package]]
 name = "apollo-router"
 version = "1.50.0"
 dependencies = [
  "access-json",
  "anyhow",
- "apollo-compiler 1.0.0-beta.18",
+ "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
  "apollo-federation",
  "arc-swap",
  "askama",
@@ -6171,7 +6173,7 @@ name = "router-fuzz"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "apollo-compiler 1.0.0-beta.18",
+ "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
  "apollo-parser 0.7.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "apollo-router",
  "apollo-smith 0.8.0",
