@@ -350,7 +350,8 @@ impl Query {
         };
         let fragments = Fragments::from_hir(document, schema, &mut defer_stats)?;
         let operations = document
-            .all_operations()
+            .operations
+            .iter()
             .map(|operation| Operation::from_hir(operation, schema, &mut defer_stats, &fragments))
             .collect::<Result<Vec<_>, SpecError>>()?;
 
