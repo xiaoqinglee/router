@@ -412,10 +412,10 @@ dependencies = [
 [[package]]
 name = "apollo-compiler"
 version = "1.0.0-beta.18"
-source = "git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts#ea069c1502aca0a9c0ccf5b43f1844c50364871f"
+source = "git+https://github.com/apollographql/apollo-rs?branch=igni/ahash#284bf23ea3de480f6cc980beffc6643ebb919cca"
 dependencies = [
  "ahash",
- "apollo-parser 0.7.7 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
+ "apollo-parser 0.7.7 (git+https://github.com/apollographql/apollo-rs?branch=igni/ahash)",
  "ariadne",
  "indexmap 2.2.6",
  "rowan",
@@ -442,7 +442,7 @@ name = "apollo-federation"
 version = "1.50.0"
 dependencies = [
  "ahash",
- "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
+ "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/ahash)",
  "derive_more",
  "hex",
  "indexmap 2.2.6",
@@ -468,7 +468,7 @@ dependencies = [
 name = "apollo-federation-cli"
 version = "0.1.0"
 dependencies = [
- "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
+ "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/ahash)",
  "apollo-federation",
  "clap",
 ]
@@ -487,7 +487,7 @@ dependencies = [
 [[package]]
 name = "apollo-parser"
 version = "0.7.7"
-source = "git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts#ea069c1502aca0a9c0ccf5b43f1844c50364871f"
+source = "git+https://github.com/apollographql/apollo-rs?branch=igni/ahash#284bf23ea3de480f6cc980beffc6643ebb919cca"
 dependencies = [
  "memchr",
  "rowan",
@@ -500,7 +500,7 @@ version = "1.50.0"
 dependencies = [
  "access-json",
  "anyhow",
- "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
+ "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/ahash)",
  "apollo-federation",
  "arc-swap",
  "askama",
@@ -6173,7 +6173,7 @@ name = "router-fuzz"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/tryouts)",
+ "apollo-compiler 1.0.0-beta.18 (git+https://github.com/apollographql/apollo-rs?branch=igni/ahash)",
  "apollo-parser 0.7.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "apollo-router",
  "apollo-smith 0.8.0",
