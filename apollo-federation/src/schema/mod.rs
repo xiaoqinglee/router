@@ -187,8 +187,7 @@ impl FederationSchema {
                     .object_types,
             ),
             CompositeTypeDefinitionPosition::Union(pos) => PossibleRuntimeTypes::Many(
-                &self
-                    .union_members
+                self.union_members
                     .get(&pos.type_name)
                     .expect("Union member should exist"),
             ),

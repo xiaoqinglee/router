@@ -377,7 +377,8 @@ impl FieldsConflictValidator {
 
     fn for_level<'a>(level: &[&'a SelectionSet]) -> Self {
         // Group `level`'s fields by the response-name/field
-        let mut at_level: HashMap<Name, HashMap<Field, Vec<&'a SelectionSet>>> = HashMap::with_hasher(Default::default());
+        let mut at_level: HashMap<Name, HashMap<Field, Vec<&'a SelectionSet>>> =
+            HashMap::with_hasher(Default::default());
         for selection_set in level {
             for field_selection in selection_set.field_selections() {
                 let response_name = field_selection.field.response_name();

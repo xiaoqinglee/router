@@ -5,12 +5,12 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use apollo_compiler::collections::fast::HashMap;
-use apollo_compiler::collections::fast::HashSet;
 use apollo_compiler::ast::Argument;
 use apollo_compiler::ast::Directive;
 use apollo_compiler::ast::OperationType;
 use apollo_compiler::ast::Type;
+use apollo_compiler::collections::fast::HashMap;
+use apollo_compiler::collections::fast::HashSet;
 use apollo_compiler::executable;
 use apollo_compiler::executable::VariableDefinition;
 use apollo_compiler::name;

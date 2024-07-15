@@ -22,15 +22,15 @@ use std::sync::atomic;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
+use apollo_compiler::collections::fast::HashMap;
+use apollo_compiler::collections::fast::HashSet;
+use apollo_compiler::collections::fast::IndexMap;
+use apollo_compiler::collections::fast::IndexSet;
 use apollo_compiler::executable;
 use apollo_compiler::name;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Name;
 use apollo_compiler::Node;
-use apollo_compiler::collections::fast::IndexMap;
-use apollo_compiler::collections::fast::HashMap;
-use apollo_compiler::collections::fast::HashSet;
-use apollo_compiler::collections::fast::IndexSet;
 
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
@@ -123,7 +123,7 @@ impl Operation {
         document: &Valid<apollo_compiler::ExecutableDocument>,
         operation_name: Option<&str>,
     ) -> Result<Self, FederationError> {
-        let operation = document.get_operation(operation_name).map_err(|_| {
+        let operation = document.operations.get(operation_name).map_err(|_| {
             FederationError::internal(format!("No operation named {operation_name:?}"))
         })?;
         let named_fragments = NamedFragments::new(&document.fragments, &schema);
@@ -209,8 +209,8 @@ mod selection_map {
     use std::ops::Deref;
     use std::sync::Arc;
 
-    use apollo_compiler::executable;
     use apollo_compiler::collections::fast::IndexMap;
+    use apollo_compiler::executable;
 
     use crate::error::FederationError;
     use crate::error::SingleFederationError::Internal;
@@ -580,13 +580,10 @@ mod selection_map {
 
     impl IntoIterator for SelectionMap {
         type Item = <IndexMap<SelectionKey, Selection> as IntoIterator>::Item;
-        type IntoIter =
-            <IndexMap<SelectionKey, Selection> as IntoIterator>::IntoIter;
+        type IntoIter = <IndexMap<SelectionKey, Selection> as IntoIterator>::IntoIter;
 
         fn into_iter(self) -> Self::IntoIter {
-            <IndexMap<SelectionKey, Selection> as IntoIterator>::into_iter(
-                self.0,
-            )
+            <IndexMap<SelectionKey, Selection> as IntoIterator>::into_iter(self.0)
         }
     }
 }
@@ -1178,9 +1175,9 @@ mod field_selection {
     use std::hash::Hasher;
     use std::ops::Deref;
     use std::sync::Arc;
-    
-    use apollo_compiler::collections::fast::HashSet;
+
     use apollo_compiler::ast;
+    use apollo_compiler::collections::fast::HashSet;
     use apollo_compiler::executable;
     use apollo_compiler::Name;
     use apollo_compiler::Node;
@@ -1766,7 +1763,7 @@ mod inline_fragment_selection {
     use std::hash::Hasher;
     use std::ops::Deref;
     use std::sync::Arc;
-    
+
     use apollo_compiler::collections::fast::HashSet;
     use apollo_compiler::executable;
     use apollo_compiler::Name;
@@ -2044,8 +2041,7 @@ impl SelectionSet {
     // overhead due to indirection, both from over allocation and from v-table lookups.
     pub(crate) fn split_top_level_fields(self) -> Box<dyn Iterator<Item = SelectionSet>> {
         let parent_type = self.type_position.clone();
-        let selections: IndexMap<SelectionKey, Selection> =
-            (**self.selections).clone();
+        let selections: IndexMap<SelectionKey, Selection> = (**self.selections).clone();
         Box::new(selections.into_values().flat_map(move |sel| {
             let digest: Box<dyn Iterator<Item = SelectionSet>> = if sel.is_field() {
                 Box::new(std::iter::once(SelectionSet::from_selection(
@@ -2312,15 +2308,11 @@ impl SelectionSet {
         others: impl Iterator<Item = &'op Selection>,
     ) -> Result<(), FederationError> {
         let mut fields: IndexMap<SelectionKey, Vec<&Arc<FieldSelection>>> =
-        IndexMap::with_hasher(Default::default());
-        let mut fragment_spreads: IndexMap<
-            SelectionKey,
-            Vec<&Arc<FragmentSpreadSelection>>
-        > = IndexMap::with_hasher(Default::default());
-        let mut inline_fragments: IndexMap<
-            SelectionKey,
-            Vec<&Arc<InlineFragmentSelection>>,
-        > = IndexMap::with_hasher(Default::default());
+            IndexMap::with_hasher(Default::default());
+        let mut fragment_spreads: IndexMap<SelectionKey, Vec<&Arc<FragmentSpreadSelection>>> =
+            IndexMap::with_hasher(Default::default());
+        let mut inline_fragments: IndexMap<SelectionKey, Vec<&Arc<InlineFragmentSelection>>> =
+            IndexMap::with_hasher(Default::default());
         let target = Arc::make_mut(&mut self.selections);
         for other_selection in others {
             let other_key = other_selection.key();
@@ -2396,7 +2388,9 @@ impl SelectionSet {
                     }
                 }
                 SelectionValue::FragmentSpread(mut self_fragment_spread_selection) => {
-                    if let Some(other_fragment_spread_selections) = fragment_spreads.shift_remove(key) {
+                    if let Some(other_fragment_spread_selections) =
+                        fragment_spreads.shift_remove(key)
+                    {
                         self_fragment_spread_selection.merge_into(
                             other_fragment_spread_selections
                                 .iter()
@@ -2405,7 +2399,9 @@ impl SelectionSet {
                     }
                 }
                 SelectionValue::InlineFragment(mut self_inline_fragment_selection) => {
-                    if let Some(other_inline_fragment_selections) = inline_fragments.shift_remove(key) {
+                    if let Some(other_inline_fragment_selections) =
+                        inline_fragments.shift_remove(key)
+                    {
                         self_inline_fragment_selection.merge_into(
                             other_inline_fragment_selections
                                 .iter()
@@ -3098,7 +3094,8 @@ impl SelectionSet {
             return Ok(self.clone());
         }
 
-        let mut at_current_level: HashMap<FetchDataPathElement, &FieldToAlias> = HashMap::with_hasher(Default::default());
+        let mut at_current_level: HashMap<FetchDataPathElement, &FieldToAlias> =
+            HashMap::with_hasher(Default::default());
         let mut remaining: Vec<&FieldToAlias> = Vec::new();
 
         for alias in aliases {
@@ -3406,7 +3403,8 @@ fn compute_aliases_for_non_merging_fields(
     alias_collector: &mut Vec<FieldToAlias>,
     schema: &ValidFederationSchema,
 ) -> Result<(), FederationError> {
-    let mut seen_response_names: HashMap<Name, SeenResponseName> = HashMap::with_hasher(Default::default());
+    let mut seen_response_names: HashMap<Name, SeenResponseName> =
+        HashMap::with_hasher(Default::default());
 
     // - `s.selections` must be fragment-spread-free.
     fn rebased_fields_in_set(s: &SelectionSetAtPath) -> impl Iterator<Item = FieldInPath> + '_ {
@@ -4056,7 +4054,8 @@ impl NamedFragments {
 
         // Note: We use IndexMap to stabilize the ordering of the result, which influences
         //       the outcome of `map_to_expanded_selection_sets`.
-        let mut fragments_map: IndexMap<Name, FragmentDependencies> = IndexMap::with_hasher(Default::default());
+        let mut fragments_map: IndexMap<Name, FragmentDependencies> =
+            IndexMap::with_hasher(Default::default());
         for fragment in fragments.values() {
             let mut fragment_usages: HashMap<Name, i32> = HashMap::with_hasher(Default::default());
             NamedFragments::collect_fragment_usages(&fragment.selection_set, &mut fragment_usages);
@@ -4372,7 +4371,7 @@ impl TryFrom<Operation> for Valid<executable::ExecutableDocument> {
 
         let mut document = executable::ExecutableDocument::new();
         document.fragments = fragments;
-        document.insert_operation(operation);
+        document.operations.insert(operation);
         Ok(document.validate(value.schema.schema())?)
     }
 }

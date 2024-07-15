@@ -840,8 +840,8 @@ impl NamedFragments {
 
 #[cfg(test)]
 mod tests {
-    use apollo_compiler::name;
     use apollo_compiler::collections::fast::IndexSet;
+    use apollo_compiler::name;
 
     use crate::operation::normalize_operation;
     use crate::operation::tests::parse_schema_and_operation;
@@ -897,7 +897,7 @@ type U {
             "operation should have some fragments"
         );
 
-        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+        if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
             let normalized_operation = normalize_operation(
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
@@ -983,7 +983,7 @@ type U {
         );
         assert_eq!(2, executable_document.fragments.len());
 
-        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+        if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
             let normalized_operation = normalize_operation(
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
@@ -1065,7 +1065,7 @@ type T2 implements I {
             "operation should have some fragments"
         );
 
-        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+        if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
             let normalized_operation = normalize_operation(
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
@@ -1142,8 +1142,9 @@ type T implements I {
             "operation should have some fragments"
         );
 
-        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-            let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> = IndexSet::with_hasher(Default::default());
+        if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
+            let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> =
+                IndexSet::with_hasher(Default::default());
             interface_objects.insert(InterfaceTypeDefinitionPosition {
                 type_name: name!("I"),
             });
@@ -1240,7 +1241,7 @@ type T {
             "operation should have some fragments"
         );
 
-        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+        if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
             let normalized_operation = normalize_operation(
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
@@ -1318,7 +1319,7 @@ type U {
             "operation should have some fragments"
         );
 
-        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+        if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
             let normalized_operation = normalize_operation(
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),
@@ -1391,7 +1392,7 @@ type T implements I {
             "operation should have some fragments"
         );
 
-        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+        if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
             let normalized_operation = normalize_operation(
                 operation,
                 NamedFragments::new(&executable_document.fragments, &schema),

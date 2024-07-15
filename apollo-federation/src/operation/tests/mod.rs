@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use apollo_compiler::collections::fast::IndexSet;
 use apollo_compiler::name;
 use apollo_compiler::schema::Schema;
 use apollo_compiler::ExecutableDocument;
-use apollo_compiler::collections::fast::IndexSet;
 
 use super::normalize_operation;
 use super::Name;
@@ -46,7 +46,7 @@ pub(super) fn parse_operation(schema: &ValidFederationSchema, query: &str) -> Op
         "query.graphql",
     )
     .unwrap();
-    let operation = executable_document.get_operation(None).unwrap();
+    let operation = executable_document.operations.get(None).unwrap();
     let named_fragments = NamedFragments::new(&executable_document.fragments, schema);
     let selection_set =
         SelectionSet::from_selection_set(&operation.selection_set, &named_fragments, schema)
@@ -102,7 +102,8 @@ type Foo {
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_with_named_fragment);
     if let Some(operation) = executable_document
-        .named_operations
+        .operations
+        .named
         .get_mut("NamedFragmentQuery")
     {
         let mut normalized_operation = normalize_operation(
@@ -158,7 +159,7 @@ type Foo {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_with_named_fragment);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let mut normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -197,7 +198,8 @@ type Query {
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_with_introspection);
     if let Some(operation) = executable_document
-        .named_operations
+        .operations
+        .named
         .get_mut("TestIntrospectionQuery")
     {
         let normalized_operation = normalize_operation(
@@ -234,7 +236,7 @@ type T {
 }
 "#;
     let (schema, mut executable_document) = parse_schema_and_operation(operation_string);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -277,7 +279,7 @@ type T {
 }
 "#;
     let (schema, mut executable_document) = parse_schema_and_operation(operation_with_directives);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -323,7 +325,7 @@ type T {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_with_directives_different_arg_order);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -367,7 +369,7 @@ type T {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_one_field_with_directives);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -413,7 +415,7 @@ type T {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_different_directives);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -464,7 +466,7 @@ type T {
 }
 "#;
     let (schema, mut executable_document) = parse_schema_and_operation(operation_defer_fields);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -530,7 +532,7 @@ type V {
 }
 "#;
     let (schema, mut executable_document) = parse_schema_and_operation(nested_operation);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -589,7 +591,7 @@ type T {
 }
 "#;
     let (schema, mut executable_document) = parse_schema_and_operation(operation_with_fragments);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -635,7 +637,7 @@ type T {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_fragments_with_directives);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -685,7 +687,7 @@ type T {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_fragments_with_directives_args_order);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -733,7 +735,7 @@ type T {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_one_fragment_with_directive);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -781,7 +783,7 @@ type T {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_fragments_with_different_directive);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -833,7 +835,7 @@ type T {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_fragments_with_defer);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -901,7 +903,7 @@ type V {
 }
 "#;
     let (schema, mut executable_document) = parse_schema_and_operation(operation_nested_fragments);
-    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+    if let Some((_, operation)) = executable_document.operations.named.first_mut() {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -947,7 +949,7 @@ type Foo {
 }
 "#;
     let (schema, mut executable_document) = parse_schema_and_operation(operation_with_typename);
-    if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+    if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -986,7 +988,7 @@ type Foo {
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_with_single_typename);
-    if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+    if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
         let normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),
@@ -1031,8 +1033,9 @@ scalar FieldSet
 "#;
     let (schema, mut executable_document) =
         parse_schema_and_operation(operation_with_intf_object_typename);
-    if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-        let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> = IndexSet::with_hasher(Default::default());
+    if let Some(operation) = executable_document.operations.named.get_mut("TestQuery") {
+        let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> =
+            IndexSet::with_hasher(Default::default());
         interface_objects.insert(InterfaceTypeDefinitionPosition {
             type_name: name!("Foo"),
         });
@@ -1181,7 +1184,7 @@ mod make_selection_tests {
     fn test_make_selection_order() {
         let (schema, executable_document) = parse_schema_and_operation(SAMPLE_OPERATION_DOC);
         let normalized_operation = normalize_operation(
-            executable_document.get_operation(None).unwrap(),
+            executable_document.operations.get(None).unwrap(),
             Default::default(),
             &schema,
             &Default::default(),
@@ -1280,7 +1283,7 @@ mod lazy_map_tests {
     fn test_lazy_map() {
         let (schema, executable_document) = parse_schema_and_operation(SAMPLE_OPERATION_DOC);
         let normalized_operation = normalize_operation(
-            executable_document.get_operation(None).unwrap(),
+            executable_document.operations.get(None).unwrap(),
             Default::default(),
             &schema,
             &Default::default(),
@@ -1338,7 +1341,7 @@ mod lazy_map_tests {
     fn test_lazy_map2() {
         let (schema, executable_document) = parse_schema_and_operation(SAMPLE_OPERATION_DOC);
         let normalized_operation = normalize_operation(
-            executable_document.get_operation(None).unwrap(),
+            executable_document.operations.get(None).unwrap(),
             Default::default(),
             &schema,
             &Default::default(),
@@ -1548,7 +1551,7 @@ fn test_expand_all_fragments1() {
           }
         "#;
     let (schema, executable_document) = parse_schema_and_operation(operation_with_named_fragment);
-    if let Ok(operation) = executable_document.get_operation(None) {
+    if let Ok(operation) = executable_document.operations.get(None) {
         let mut normalized_operation = normalize_operation(
             operation,
             NamedFragments::new(&executable_document.fragments, &schema),

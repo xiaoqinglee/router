@@ -576,7 +576,7 @@ mod tests {
         "#;
 
         let (schema, mut executable_document) = parse_schema_and_operation(src);
-        let (op_name, operation) = executable_document.named_operations.first_mut().unwrap();
+        let (op_name, operation) = executable_document.operations.named.first_mut().unwrap();
 
         let query_graph =
             Arc::new(build_query_graph(op_name.to_string().into(), schema.clone()).unwrap());
