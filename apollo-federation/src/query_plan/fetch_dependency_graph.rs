@@ -650,7 +650,7 @@ impl FetchDependencyGraph {
         //    the final optimizations in `reduceAndOptimize` will however later merge nodes
         //    on the same subgraph and mergeAt when possible).
         // 4. is not part of our conditions or our conditions ancestors
-        //    (meaning that we annot reuse a node if it fetches something we take as input).
+        //    (meaning that we cannot reuse a node if it fetches something we take as input).
         // 5. is part of the same "defer" grouping
         // 6. has the same path in parents (here again, we _will_ eventually merge fetches
         //    for which this is not true later in `reduceAndOptimize`, but for now,
