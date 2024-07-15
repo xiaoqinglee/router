@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use apollo_compiler::ast::Directive;
 use apollo_compiler::ast::Value;
-use apollo_compiler::collections::fast::HashMap;
+use apollo_compiler::collections::HashMap;
 use apollo_compiler::name;
 use apollo_compiler::InvalidNameError;
 use apollo_compiler::Name;

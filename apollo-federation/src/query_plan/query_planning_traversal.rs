@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use apollo_compiler::collections::fast::IndexSet;
+use apollo_compiler::collections::IndexSet;
 use petgraph::graph::EdgeIndex;
 use petgraph::graph::NodeIndex;
 

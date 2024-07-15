@@ -1,7 +1,7 @@
 use std::fmt;
 
-use apollo_compiler::collections::fast::IndexMap;
-use apollo_compiler::collections::fast::IndexSet;
+use apollo_compiler::collections::IndexMap;
+use apollo_compiler::collections::IndexSet;
 use apollo_compiler::name;
 use apollo_compiler::schema::Component;
 use apollo_compiler::schema::ComponentName;

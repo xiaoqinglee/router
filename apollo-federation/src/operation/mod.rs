@@ -22,10 +22,10 @@ use std::sync::atomic;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use apollo_compiler::collections::fast::HashMap;
-use apollo_compiler::collections::fast::HashSet;
-use apollo_compiler::collections::fast::IndexMap;
-use apollo_compiler::collections::fast::IndexSet;
+use apollo_compiler::collections::HashMap;
+use apollo_compiler::collections::HashSet;
+use apollo_compiler::collections::IndexMap;
+use apollo_compiler::collections::IndexSet;
 use apollo_compiler::executable;
 use apollo_compiler::name;
 use apollo_compiler::validation::Valid;
@@ -209,7 +209,7 @@ mod selection_map {
     use std::ops::Deref;
     use std::sync::Arc;
 
-    use apollo_compiler::collections::fast::IndexMap;
+    use apollo_compiler::collections::IndexMap;
     use apollo_compiler::executable;
 
     use crate::error::FederationError;
@@ -1177,7 +1177,7 @@ mod field_selection {
     use std::sync::Arc;
 
     use apollo_compiler::ast;
-    use apollo_compiler::collections::fast::HashSet;
+    use apollo_compiler::collections::HashSet;
     use apollo_compiler::executable;
     use apollo_compiler::Name;
     use apollo_compiler::Node;
@@ -1764,7 +1764,7 @@ mod inline_fragment_selection {
     use std::ops::Deref;
     use std::sync::Arc;
 
-    use apollo_compiler::collections::fast::HashSet;
+    use apollo_compiler::collections::HashSet;
     use apollo_compiler::executable;
     use apollo_compiler::Name;
 

@@ -38,8 +38,8 @@
 use std::ops::Not;
 use std::sync::Arc;
 
-use apollo_compiler::collections::fast::HashMap;
-use apollo_compiler::collections::fast::HashSet;
+use apollo_compiler::collections::HashMap;
+use apollo_compiler::collections::HashSet;
 use apollo_compiler::executable;
 use apollo_compiler::Name;
 use apollo_compiler::Node;

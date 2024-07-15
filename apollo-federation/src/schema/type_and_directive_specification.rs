@@ -1,8 +1,8 @@
 use apollo_compiler::ast::DirectiveLocation;
 use apollo_compiler::ast::FieldDefinition;
 use apollo_compiler::ast::Value;
-use apollo_compiler::collections::fast::IndexMap;
-use apollo_compiler::collections::fast::IndexSet;
+use apollo_compiler::collections::IndexMap;
+use apollo_compiler::collections::IndexSet;
 use apollo_compiler::schema::Component;
 use apollo_compiler::schema::ComponentName;
 use apollo_compiler::schema::DirectiveDefinition;

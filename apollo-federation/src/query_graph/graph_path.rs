@@ -9,8 +9,8 @@ use std::sync::atomic;
 use std::sync::Arc;
 
 use apollo_compiler::ast::Value;
-use apollo_compiler::collections::fast::IndexMap;
-use apollo_compiler::collections::fast::IndexSet;
+use apollo_compiler::collections::IndexMap;
+use apollo_compiler::collections::IndexSet;
 use apollo_compiler::executable::DirectiveList;
 use petgraph::graph::EdgeIndex;
 use petgraph::graph::NodeIndex;

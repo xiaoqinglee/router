@@ -840,7 +840,7 @@ impl NamedFragments {
 
 #[cfg(test)]
 mod tests {
-    use apollo_compiler::collections::fast::IndexSet;
+    use apollo_compiler::collections::IndexSet;
     use apollo_compiler::name;
 
     use crate::operation::normalize_operation;

@@ -8,7 +8,7 @@
 //! graphql-js schema would.
 
 use apollo_compiler::ast::Value;
-use apollo_compiler::collections::fast::IndexMap;
+use apollo_compiler::collections::IndexMap;
 use apollo_compiler::schema::Directive;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::InputValueDefinition;

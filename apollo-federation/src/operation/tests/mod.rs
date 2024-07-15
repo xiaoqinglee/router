@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use apollo_compiler::collections::fast::IndexSet;
+use apollo_compiler::collections::IndexSet;
 use apollo_compiler::name;
 use apollo_compiler::schema::Schema;
 use apollo_compiler::ExecutableDocument;
