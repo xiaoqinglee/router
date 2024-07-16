@@ -167,7 +167,6 @@ impl Query {
                                     &mut parameters,
                                     &mut input,
                                     &mut output,
-                                    &mut Vec::new(),
                                 ) {
                                     Ok(()) => output.into(),
                                     Err(InvalidValue) => Value::Null,
@@ -222,7 +221,6 @@ impl Query {
                             &mut parameters,
                             &mut input,
                             &mut output,
-                            &mut Vec::new(),
                         ) {
                             Ok(()) => output.into(),
                             Err(InvalidValue) => Value::Null,
@@ -786,15 +784,15 @@ impl Query {
         Ok(())
     }
 
-    fn apply_root_selection_set<'a: 'b, 'b>(
+    fn apply_root_selection_set<'a>(
         &'a self,
         root_type_name: &str,
         selection_set: &'a [Selection],
         parameters: &mut FormatParameters,
         input: &mut Object,
         output: &mut Object,
-        path: &mut Vec<ResponsePathElement<'b>>,
     ) -> Result<(), InvalidValue> {
+        let mut path = vec![];
         for selection in selection_set {
             match selection {
                 Selection::Field {
@@ -825,17 +823,16 @@ impl Query {
                         let output_value =
                             output.entry((*field_name).clone()).or_insert(Value::Null);
                         path.push(ResponsePathElement::Key(field_name_str));
-                        let res = self.format_value(
+                        self.format_value(
                             parameters,
                             &field_type.0,
                             input_value,
                             output_value,
-                            path,
+                            &mut path,
                             &field_type.0,
                             selection_set,
-                        );
+                        )?;
                         path.pop();
-                        res?
                     } else if name.as_str() == TYPENAME {
                         if !output.contains_key(field_name_str) {
                             output.insert(field_name.clone(), Value::String(root_type_name.into()));
@@ -846,7 +843,7 @@ impl Query {
                                 "Cannot return null for non-nullable field {}.{field_name_str}",
                                 root_type_name
                             ),
-                            path: Some(Path::from_response_slice(path)),
+                            path: Some(Path::from_response_slice(&path)),
                             ..Error::default()
                         });
                         return Err(InvalidValue);
@@ -874,7 +871,7 @@ impl Query {
                         parameters,
                         input,
                         output,
-                        path,
+                        &mut path,
                         // FIXME: use `ast::Name` everywhere so fallible conversion isn’t needed
                         #[allow(clippy::unwrap_used)]
                         &FieldType::new_named(type_condition.try_into().unwrap()).0,
@@ -910,7 +907,7 @@ impl Query {
                             parameters,
                             input,
                             output,
-                            path,
+                            &mut path,
                             // FIXME: use `ast::Name` everywhere so fallible conversion isn’t needed
                             #[allow(clippy::unwrap_used)]
                             &FieldType::new_named(root_type_name.try_into().unwrap()).0,

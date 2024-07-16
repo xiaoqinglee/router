@@ -405,14 +405,18 @@ pub fn main() -> Result<()> {
     // builder.max_blocking_threads(8192);
     builder.on_thread_start(|| {
         let prev_count = GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::Relaxed);
-        if prev_count >= GLOBAL_THREAD_HIGH.load(Ordering::Relaxed) {
-            GLOBAL_THREAD_HIGH.store(prev_count + 1, Ordering::Relaxed);
-        }
+        let _ = GLOBAL_THREAD_HIGH.fetch_update(Ordering::Acquire, Ordering::Relaxed, move |x| {
+            if x < prev_count + 1 {
+                Some(prev_count + 1)
+            } else {
+                None
+            }
+        });
     });
     builder.on_thread_stop(|| {
         GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::Relaxed);
         tracing::info!(
-            "Average park count for thread({:?}): {}",
+            "Average park count for {:?}: {}",
             std::thread::current().id(),
             AVERAGE.with_borrow(|v| v.average)
         );
@@ -421,9 +425,17 @@ pub fn main() -> Result<()> {
         let current = AVERAGE.with_borrow(|v| v.average);
         AVERAGE.with_borrow_mut(|v| v.update(current + 1.0));
         let prev_count = GLOBAL_THREAD_PARKED.fetch_add(1, Ordering::Relaxed);
-        if prev_count >= GLOBAL_THREAD_PARKED_HIGH.load(Ordering::Relaxed) {
-            GLOBAL_THREAD_PARKED_HIGH.store(prev_count + 1, Ordering::Relaxed);
-        }
+        let _ = GLOBAL_THREAD_PARKED_HIGH.fetch_update(
+            Ordering::Acquire,
+            Ordering::Relaxed,
+            move |x| {
+                if x < prev_count + 1 {
+                    Some(prev_count + 1)
+                } else {
+                    None
+                }
+            },
+        );
     });
     builder.on_thread_unpark(|| {
         let current = AVERAGE.with_borrow(|v| v.average);
