@@ -107,6 +107,12 @@ expression: "&schema"
       },
       "type": "object"
     },
+    "All": {
+      "enum": [
+        "all"
+      ],
+      "type": "string"
+    },
     "ApiSchemaMode": {
       "description": "API schema generation modes.",
       "oneOf": [
@@ -512,6 +518,35 @@ expression: "&schema"
         }
       },
       "type": "object"
+    },
+    "CacheAttributes": {
+      "additionalProperties": false,
+      "properties": {
+        "entity.type": {
+          "default": null,
+          "description": "Entity type",
+          "nullable": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "CacheInstrumentsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "apollo.router.operations.entity.cache": {
+          "$ref": "#/definitions/DefaultedStandardInstrument_for_extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector",
+          "description": "#/definitions/DefaultedStandardInstrument_for_extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector"
+        }
+      },
+      "type": "object"
+    },
+    "CacheKind": {
+      "enum": [
+        "hit",
+        "miss"
+      ],
+      "type": "string"
     },
     "CallbackMode": {
       "additionalProperties": false,
@@ -1987,6 +2022,29 @@ expression: "&schema"
         }
       ]
     },
+    "DefaultedStandardInstrument_for_extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "attributes": {
+              "$ref": "#/definitions/extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector",
+              "description": "#/definitions/extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector"
+            }
+          },
+          "required": [
+            "attributes"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "DefaultedStandardInstrument_for_extendable_attribute_apollo_router::plugins::telemetry::config_new::graphql::attributes::GraphQLAttributes_apollo_router::plugins::telemetry::config_new::graphql::selectors::GraphQLSelector": {
       "anyOf": [
         {
@@ -2069,6 +2127,17 @@ expression: "&schema"
         "enabled"
       ],
       "type": "string"
+    },
+    "EntityType": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/All",
+          "description": "#/definitions/All"
+        },
+        {
+          "type": "string"
+        }
+      ]
     },
     "ErrorConfig": {
       "properties": {
@@ -2466,8 +2535,8 @@ expression: "&schema"
           "type": "boolean"
         },
         "format": {
-          "$ref": "#/definitions/TraceIdFormat",
-          "description": "#/definitions/TraceIdFormat"
+          "$ref": "#/definitions/TraceIdFormat2",
+          "description": "#/definitions/TraceIdFormat2"
         },
         "header_name": {
           "description": "Choose the header name to expose trace_id (default: apollo-trace-id)",
@@ -3228,6 +3297,42 @@ expression: "&schema"
         }
       ]
     },
+    "Instrument_for_CacheAttributes_and_SubgraphSelector_and_SubgraphValue": {
+      "additionalProperties": false,
+      "properties": {
+        "attributes": {
+          "$ref": "#/definitions/extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector",
+          "description": "#/definitions/extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector"
+        },
+        "condition": {
+          "$ref": "#/definitions/Condition_for_SubgraphSelector",
+          "description": "#/definitions/Condition_for_SubgraphSelector"
+        },
+        "description": {
+          "description": "The description of the instrument.",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/InstrumentType",
+          "description": "#/definitions/InstrumentType"
+        },
+        "unit": {
+          "description": "The units of the instrument, e.g. \"ms\", \"bytes\", \"requests\".",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/definitions/SubgraphValue",
+          "description": "#/definitions/SubgraphValue"
+        }
+      },
+      "required": [
+        "description",
+        "type",
+        "unit",
+        "value"
+      ],
+      "type": "object"
+    },
     "Instrument_for_GraphQLAttributes_and_GraphQLSelector_and_GraphQLValue": {
       "additionalProperties": false,
       "properties": {
@@ -3394,6 +3499,10 @@ expression: "&schema"
     "InstrumentsConfig": {
       "additionalProperties": false,
       "properties": {
+        "cache": {
+          "$ref": "#/definitions/extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::CacheInstrumentsConfig_apollo_router::plugins::telemetry::config_new::instruments::Instrument<apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes,_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector,_apollo_router::plugins::telemetry::config_new::selectors::SubgraphValue>",
+          "description": "#/definitions/extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::CacheInstrumentsConfig_apollo_router::plugins::telemetry::config_new::instruments::Instrument<apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes, apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector, apollo_router::plugins::telemetry::config_new::selectors::SubgraphValue>"
+        },
         "default_requirement_level": {
           "$ref": "#/definitions/DefaultAttributeRequirementLevel",
           "description": "#/definitions/DefaultAttributeRequirementLevel"
@@ -4311,6 +4420,11 @@ expression: "&schema"
           "description": "If cache warm up is configured, this will allow the router to keep a query plan created with the old schema, if it determines that the schema update does not affect the corresponding query",
           "type": "boolean"
         },
+        "legacy_introspection_caching": {
+          "default": true,
+          "description": "Activates introspection response caching Historically, the Router has executed introspection queries in the query planner, and cached their response in its cache because they were expensive. This will change soon as introspection will be removed from the query planner. In the meantime, since storing introspection responses can fill up the cache, this option can be used to deactivate it. Default: true",
+          "type": "boolean"
+        },
         "warmed_up_queries": {
           "default": null,
           "description": "Warms up the cache on reloads by running the query plan over a list of the most used queries (from the in memory cache) Configures the number of queries warmed up. Defaults to 1/3 of the in memory cache",
@@ -4759,6 +4873,11 @@ expression: "&schema"
           "description": "Send the body",
           "type": "boolean"
         },
+        "condition": {
+          "$ref": "#/definitions/Condition_for_RouterSelector",
+          "description": "#/definitions/Condition_for_RouterSelector",
+          "nullable": true
+        },
         "context": {
           "default": false,
           "description": "Send the context",
@@ -4795,6 +4914,11 @@ expression: "&schema"
           "default": false,
           "description": "Send the body",
           "type": "boolean"
+        },
+        "condition": {
+          "$ref": "#/definitions/Condition_for_RouterSelector",
+          "description": "#/definitions/Condition_for_RouterSelector",
+          "nullable": true
         },
         "context": {
           "default": false,
@@ -4892,8 +5016,8 @@ expression: "&schema"
           "description": "The trace ID of the request.",
           "properties": {
             "trace_id": {
-              "$ref": "#/definitions/TraceIdFormat2",
-              "description": "#/definitions/TraceIdFormat2"
+              "$ref": "#/definitions/TraceIdFormat",
+              "description": "#/definitions/TraceIdFormat"
             }
           },
           "required": [
@@ -5703,6 +5827,11 @@ expression: "&schema"
           "description": "Send the body",
           "type": "boolean"
         },
+        "condition": {
+          "$ref": "#/definitions/Condition_for_SubgraphSelector",
+          "description": "#/definitions/Condition_for_SubgraphSelector",
+          "nullable": true
+        },
         "context": {
           "default": false,
           "description": "Send the context",
@@ -5739,6 +5868,11 @@ expression: "&schema"
           "default": false,
           "description": "Send the body",
           "type": "boolean"
+        },
+        "condition": {
+          "$ref": "#/definitions/Condition_for_SubgraphSelector",
+          "description": "#/definitions/Condition_for_SubgraphSelector",
+          "nullable": true
         },
         "context": {
           "default": false,
@@ -5793,6 +5927,19 @@ expression: "&schema"
           },
           "required": [
             "subgraph_operation_kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "subgraph_name": {
+              "description": "The subgraph name",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "subgraph_name"
           ],
           "type": "object"
         },
@@ -6060,6 +6207,19 @@ expression: "&schema"
         {
           "additionalProperties": false,
           "properties": {
+            "subgraph_on_graphql_error": {
+              "description": "Boolean set to true if the response body contains graphql error",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "subgraph_on_graphql_error"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "baggage": {
               "description": "The name of the baggage item.",
               "type": "string"
@@ -6120,6 +6280,24 @@ expression: "&schema"
           },
           "required": [
             "error"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "cache": {
+              "$ref": "#/definitions/CacheKind",
+              "description": "#/definitions/CacheKind"
+            },
+            "entity_type": {
+              "$ref": "#/definitions/EntityType",
+              "description": "#/definitions/EntityType",
+              "nullable": true
+            }
+          },
+          "required": [
+            "cache"
           ],
           "type": "object"
         }
@@ -6408,6 +6586,11 @@ expression: "&schema"
           "description": "Send the body",
           "type": "boolean"
         },
+        "condition": {
+          "$ref": "#/definitions/Condition_for_SupergraphSelector",
+          "description": "#/definitions/Condition_for_SupergraphSelector",
+          "nullable": true
+        },
         "context": {
           "default": false,
           "description": "Send the context",
@@ -6439,6 +6622,11 @@ expression: "&schema"
           "default": false,
           "description": "Send the body",
           "type": "boolean"
+        },
+        "condition": {
+          "$ref": "#/definitions/Condition_for_SupergraphSelector",
+          "description": "#/definitions/Condition_for_SupergraphSelector",
+          "nullable": true
         },
         "context": {
           "default": false,
@@ -6746,6 +6934,20 @@ expression: "&schema"
             "cost"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Boolean returning true if it's the primary response and not events like subscription events or deferred responses",
+          "properties": {
+            "is_primary_response": {
+              "description": "Boolean returning true if it's the primary response and not events like subscription events or deferred responses",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "is_primary_response"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -6907,6 +7109,24 @@ expression: "&schema"
     "TraceIdFormat": {
       "oneOf": [
         {
+          "description": "Open Telemetry trace ID, a hex string.",
+          "enum": [
+            "open_telemetry"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Datadog trace ID, a u64.",
+          "enum": [
+            "datadog"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "TraceIdFormat2": {
+      "oneOf": [
+        {
           "description": "Format the Trace ID as a hexadecimal number\n\n(e.g. Trace ID 16 -> 00000000000000000000000000000010)",
           "enum": [
             "hexadecimal"
@@ -6922,24 +7142,6 @@ expression: "&schema"
         },
         {
           "description": "Datadog",
-          "enum": [
-            "datadog"
-          ],
-          "type": "string"
-        }
-      ]
-    },
-    "TraceIdFormat2": {
-      "oneOf": [
-        {
-          "description": "Open Telemetry trace ID, a hex string.",
-          "enum": [
-            "open_telemetry"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Datadog trace ID, a u64.",
           "enum": [
             "datadog"
           ],
@@ -7607,6 +7809,34 @@ expression: "&schema"
         "graphql.operation.type": {
           "default": null,
           "description": "The type of the operation being executed. Examples: * query * subscription * mutation Requirement level: Recommended",
+          "nullable": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::CacheInstrumentsConfig_apollo_router::plugins::telemetry::config_new::instruments::Instrument<apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes,_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector,_apollo_router::plugins::telemetry::config_new::selectors::SubgraphValue>": {
+      "additionalProperties": {
+        "$ref": "#/definitions/Instrument_for_CacheAttributes_and_SubgraphSelector_and_SubgraphValue",
+        "description": "#/definitions/Instrument_for_CacheAttributes_and_SubgraphSelector_and_SubgraphValue"
+      },
+      "properties": {
+        "apollo.router.operations.entity.cache": {
+          "$ref": "#/definitions/DefaultedStandardInstrument_for_extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector",
+          "description": "#/definitions/DefaultedStandardInstrument_for_extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector"
+        }
+      },
+      "type": "object"
+    },
+    "extendable_attribute_apollo_router::plugins::telemetry::config_new::cache::attributes::CacheAttributes_apollo_router::plugins::telemetry::config_new::selectors::SubgraphSelector": {
+      "additionalProperties": {
+        "$ref": "#/definitions/SubgraphSelector",
+        "description": "#/definitions/SubgraphSelector"
+      },
+      "properties": {
+        "entity.type": {
+          "default": null,
+          "description": "Entity type",
           "nullable": true,
           "type": "boolean"
         }
