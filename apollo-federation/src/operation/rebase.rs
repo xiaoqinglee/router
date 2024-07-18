@@ -25,6 +25,7 @@ use super::TYPENAME_FIELD;
 use crate::error::FederationError;
 use crate::schema::position::CompositeTypeDefinitionPosition;
 use crate::schema::position::OutputTypeDefinitionPosition;
+use crate::schema::PossibleRuntimeTypes;
 use crate::schema::ValidFederationSchema;
 
 fn print_possible_runtimes(
@@ -32,15 +33,16 @@ fn print_possible_runtimes(
     schema: &ValidFederationSchema,
 ) -> String {
     schema
-        .possible_runtime_types(composite_type.clone())
+        .possible_runtime_types_ref(composite_type)
         .map_or_else(
             |_| "undefined".to_string(),
-            |runtimes| {
-                runtimes
+            |runtimes| match runtimes {
+                PossibleRuntimeTypes::Single(otdp) => otdp.type_name.to_string(),
+                PossibleRuntimeTypes::Many(otdps) => otdps
                     .iter()
                     .map(|r| r.type_name.to_string())
                     .collect::<Vec<String>>()
-                    .join(", ")
+                    .join(", "),
             },
         )
 }
