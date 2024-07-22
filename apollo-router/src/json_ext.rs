@@ -149,14 +149,24 @@ pub(crate) trait ValueExt {
 impl ValueExt for Value {
     fn deep_merge(&mut self, other: Self) {
         match (self, other) {
-            (Value::Object(a), Value::Object(b)) => {
-                for (key, value) in b.into_iter() {
-                    match a.entry(key) {
-                        Entry::Vacant(e) => {
-                            e.insert(value);
+            (Value::Object(a), Value::Object(mut b)) => {
+                // It's more efficient to iter over the shortest object
+                if a.len() < b.len() {
+                    for (key, value) in a.iter_mut() {
+                        if let Some(v) = b.remove(key) {
+                            value.deep_merge(v);
                         }
-                        Entry::Occupied(e) => {
-                            e.into_mut().deep_merge(value);
+                    }
+                    a.extend(b);
+                } else {
+                    for (key, value) in b.into_iter() {
+                        match a.entry(key) {
+                            Entry::Vacant(e) => {
+                                e.insert(value);
+                            }
+                            Entry::Occupied(e) => {
+                                e.into_mut().deep_merge(value);
+                            }
                         }
                     }
                 }
