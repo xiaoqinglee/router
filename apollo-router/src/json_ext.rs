@@ -283,11 +283,7 @@ impl ValueExt for Value {
                             .expect("we just created the value at that index");
                     }
                     Value::Null => {
-                        let mut a = Vec::new();
-                        for _ in 0..index {
-                            a.push(Value::default());
-                        }
-                        a.push(Value::default());
+                        let a = vec![Value::default(); index + 1];
 
                         *current_node = Value::Array(a);
                         current_node = current_node
@@ -484,7 +480,7 @@ fn filter_type_conditions(value: Value, type_conditions: &Option<TypeConditions>
     if let Some(tc) = type_conditions {
         match value {
             Value::Object(ref o) => {
-                if let Some(Value::String(type_name)) = &o.get("__typename") {
+                if let Some(Value::String(type_name)) = &o.get(TYPENAME) {
                     if !tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
                         return Value::Null;
                     }
@@ -503,6 +499,76 @@ fn filter_type_conditions(value: Value, type_conditions: &Option<TypeConditions>
     value
 }
 
+fn process_object<'a, F>(
+    schema: &Schema,
+    parent: &mut Path,
+    path: &'a [PathElement],
+    f: &mut F,
+    value: &'a Value,
+    tc: &TypeConditions,
+    index: usize,
+) where
+    F: FnMut(&Path, &'a Value),
+{
+    if let Value::Object(o) = value {
+        if let Some(Value::String(type_name)) = o.get(TYPENAME) {
+            if tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
+                pop_dance(schema, parent, path, f, value, index);
+            }
+        }
+    }
+}
+
+fn pop_dance<'a, F>(
+    schema: &Schema,
+    parent: &mut Path,
+    path: &'a [PathElement],
+    f: &mut F,
+    value: &'a Value,
+    index: usize,
+) where
+    F: FnMut(&Path, &'a Value),
+{
+    parent.push(PathElement::Index(index));
+    iterate_path(schema, parent, path, value, f);
+    parent.pop();
+}
+
+fn process_object_mut<'a, F>(
+    schema: &Schema,
+    parent: &mut Path,
+    path: &'a [PathElement],
+    f: &mut F,
+    value: &'a mut Value,
+    tc: &TypeConditions,
+    index: usize,
+) where
+    F: FnMut(&Path, &'a mut Value),
+{
+    if let Value::Object(o) = value {
+        if let Some(Value::String(type_name)) = o.get(TYPENAME) {
+            if tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
+                pop_dance_mut(schema, parent, path, f, value, index);
+            }
+        }
+    }
+}
+
+fn pop_dance_mut<'a, F>(
+    schema: &Schema,
+    parent: &mut Path,
+    path: &'a [PathElement],
+    f: &mut F,
+    value: &'a mut Value,
+    index: usize,
+) where
+    F: FnMut(&Path, &'a mut Value),
+{
+    parent.push(PathElement::Index(index));
+    iterate_path_mut(schema, parent, path, value, f);
+    parent.pop();
+}
+
 fn iterate_path<'a, F>(
     schema: &Schema,
     parent: &mut Path,
@@ -519,36 +585,18 @@ fn iterate_path<'a, F>(
                 for (i, value) in array.iter().enumerate() {
                     if let Some(tc) = type_conditions {
                         if !tc.is_empty() {
-                            if let Value::Object(o) = value {
-                                if let Some(Value::String(type_name)) = o.get("__typename") {
-                                    if tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
-                                        parent.push(PathElement::Index(i));
-                                        iterate_path(schema, parent, &path[1..], value, f);
-                                        parent.pop();
-                                    }
-                                }
-                            }
-
-                            if let Value::Array(array) = value {
+                            if let Value::Object(_o) = value {
+                                process_object(schema, parent, &path[1..], f, value, tc, i);
+                            } else if let Value::Array(array) = value {
                                 for (i, value) in array.iter().enumerate() {
-                                    if let Value::Object(o) = value {
-                                        if let Some(Value::String(type_name)) = o.get("__typename")
-                                        {
-                                            if tc.iter().any(|tc| tc.as_str() == type_name.as_str())
-                                            {
-                                                parent.push(PathElement::Index(i));
-                                                iterate_path(schema, parent, &path[1..], value, f);
-                                                parent.pop();
-                                            }
-                                        }
-                                    }
+                                    // if let Value::Object(_o) = value {
+                                    process_object(schema, parent, &path[1..], f, value, tc, i);
+                                    // }
                                 }
                             }
                         }
                     } else {
-                        parent.push(PathElement::Index(i));
-                        iterate_path(schema, parent, &path[1..], value, f);
-                        parent.pop();
+                        pop_dance(schema, parent, &path[1..], f, value, i);
                     }
                 }
             }
@@ -556,9 +604,7 @@ fn iterate_path<'a, F>(
         Some(PathElement::Index(i)) => {
             if let Value::Array(a) = data {
                 if let Some(value) = a.get(*i) {
-                    parent.push(PathElement::Index(*i));
-                    iterate_path(schema, parent, &path[1..], value, f);
-                    parent.pop();
+                    pop_dance(schema, parent, &path[1..], f, value, *i);
                 }
             }
         }
@@ -567,7 +613,7 @@ fn iterate_path<'a, F>(
                 if !tc.is_empty() {
                     if let Value::Object(o) = data {
                         if let Some(value) = o.get(k.as_str()) {
-                            if let Some(Value::String(type_name)) = value.get("__typename") {
+                            if let Some(Value::String(type_name)) = value.get(TYPENAME) {
                                 if tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
                                     parent.push(PathElement::Key(k.to_string(), None));
                                     iterate_path(schema, parent, &path[1..], value, f);
@@ -578,11 +624,9 @@ fn iterate_path<'a, F>(
                     } else if let Value::Array(array) = data {
                         for (i, value) in array.iter().enumerate() {
                             if let Value::Object(o) = value {
-                                if let Some(Value::String(type_name)) = o.get("__typename") {
+                                if let Some(Value::String(type_name)) = o.get(TYPENAME) {
                                     if tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
-                                        parent.push(PathElement::Index(i));
-                                        iterate_path(schema, parent, path, value, f);
-                                        parent.pop();
+                                        pop_dance(schema, parent, path, f, value, i);
                                     }
                                 }
                             }
@@ -597,9 +641,7 @@ fn iterate_path<'a, F>(
                 }
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter().enumerate() {
-                    parent.push(PathElement::Index(i));
-                    iterate_path(schema, parent, path, value, f);
-                    parent.pop();
+                    pop_dance(schema, parent, path, f, value, i);
                 }
             }
         }
@@ -613,9 +655,7 @@ fn iterate_path<'a, F>(
                 iterate_path(schema, parent, &path[1..], data, f);
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter().enumerate() {
-                    parent.push(PathElement::Index(i));
-                    iterate_path(schema, parent, path, value, f);
-                    parent.pop();
+                    pop_dance(schema, parent, path, f, value, i);
                 }
             }
         }
@@ -638,20 +678,10 @@ fn iterate_path_mut<'a, F>(
                 for (i, value) in array.iter_mut().enumerate() {
                     if let Some(tc) = type_conditions {
                         if !tc.is_empty() {
-                            if let Value::Object(o) = value {
-                                if let Some(Value::String(type_name)) = o.get("__typename") {
-                                    if tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
-                                        parent.push(PathElement::Index(i));
-                                        iterate_path_mut(schema, parent, &path[1..], value, f);
-                                        parent.pop();
-                                    }
-                                }
-                            }
+                            process_object_mut(schema, parent, &path[1..], f, value, tc, i);
                         }
                     } else {
-                        parent.push(PathElement::Index(i));
-                        iterate_path_mut(schema, parent, &path[1..], value, f);
-                        parent.pop();
+                        pop_dance_mut(schema, parent, &path[1..], f, value, i);
                     }
                 }
             }
@@ -659,9 +689,7 @@ fn iterate_path_mut<'a, F>(
         Some(PathElement::Index(i)) => {
             if let Value::Array(a) = data {
                 if let Some(value) = a.get_mut(*i) {
-                    parent.push(PathElement::Index(*i));
-                    iterate_path_mut(schema, parent, &path[1..], value, f);
-                    parent.pop();
+                    pop_dance_mut(schema, parent, &path[1..], f, value, *i);
                 }
             }
         }
@@ -670,7 +698,7 @@ fn iterate_path_mut<'a, F>(
                 if !tc.is_empty() {
                     if let Value::Object(o) = data {
                         if let Some(value) = o.get_mut(k.as_str()) {
-                            if let Some(Value::String(type_name)) = value.get("__typename") {
+                            if let Some(Value::String(type_name)) = value.get(TYPENAME) {
                                 if tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
                                     parent.push(PathElement::Key(k.to_string(), None));
                                     iterate_path_mut(schema, parent, &path[1..], value, f);
@@ -681,11 +709,9 @@ fn iterate_path_mut<'a, F>(
                     } else if let Value::Array(array) = data {
                         for (i, value) in array.iter_mut().enumerate() {
                             if let Value::Object(o) = value {
-                                if let Some(Value::String(type_name)) = o.get("__typename") {
+                                if let Some(Value::String(type_name)) = o.get(TYPENAME) {
                                     if tc.iter().any(|tc| tc.as_str() == type_name.as_str()) {
-                                        parent.push(PathElement::Index(i));
-                                        iterate_path_mut(schema, parent, path, value, f);
-                                        parent.pop();
+                                        pop_dance_mut(schema, parent, path, f, value, i);
                                     }
                                 }
                             }
@@ -700,9 +726,7 @@ fn iterate_path_mut<'a, F>(
                 }
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter_mut().enumerate() {
-                    parent.push(PathElement::Index(i));
-                    iterate_path_mut(schema, parent, path, value, f);
-                    parent.pop();
+                    pop_dance_mut(schema, parent, path, f, value, i);
                 }
             }
         }
@@ -716,9 +740,7 @@ fn iterate_path_mut<'a, F>(
                 iterate_path_mut(schema, parent, &path[1..], data, f);
             } else if let Value::Array(array) = data {
                 for (i, value) in array.iter_mut().enumerate() {
-                    parent.push(PathElement::Index(i));
-                    iterate_path_mut(schema, parent, path, value, f);
-                    parent.pop();
+                    pop_dance_mut(schema, parent, path, f, value, i);
                 }
             }
         }
@@ -1365,22 +1387,22 @@ mod tests {
         let schema = test_schema();
 
         // Basic matching
-        assert!(json!({ "__typename": "A", "x": "42"}).is_object_of_type(&schema, "A"));
+        assert!(json!({ TYPENAME: "A", "x": "42"}).is_object_of_type(&schema, "A"));
 
         // Matching with subtyping
-        assert!(json!({ "__typename": "A", "x": "42"}).is_object_of_type(&schema, "I"));
+        assert!(json!({ TYPENAME: "A", "x": "42"}).is_object_of_type(&schema, "I"));
 
         // Matching when missing __typename (see comment on the method declaration).
         assert!(json!({ "x": "42"}).is_object_of_type(&schema, "A"));
 
         // Non-matching because not an object
-        assert!(!json!([{ "__typename": "A", "x": "42"}]).is_object_of_type(&schema, "A"));
+        assert!(!json!([{ TYPENAME: "A", "x": "42"}]).is_object_of_type(&schema, "A"));
         assert!(!json!("foo").is_object_of_type(&schema, "I"));
         assert!(!json!(42).is_object_of_type(&schema, "I"));
 
         // Non-matching because not of the asked type.
-        assert!(!json!({ "__typename": "B", "y": "42"}).is_object_of_type(&schema, "A"));
-        assert!(!json!({ "__typename": "B", "y": "42"}).is_object_of_type(&schema, "I"));
+        assert!(!json!({ TYPENAME: "B", "y": "42"}).is_object_of_type(&schema, "A"));
+        assert!(!json!({ TYPENAME: "B", "y": "42"}).is_object_of_type(&schema, "I"));
     }
 
     #[test]
@@ -1389,19 +1411,19 @@ mod tests {
         let json = json!({
             "i": [
                 {
-                    "__typename": "A",
+                    TYPENAME: "A",
                     "x": 0,
                 },
                 {
-                    "__typename": "B",
+                    TYPENAME: "B",
                     "y": 1,
                 },
                 {
-                    "__typename": "B",
+                    TYPENAME: "B",
                     "y": 2,
                 },
                 {
-                    "__typename": "A",
+                    TYPENAME: "A",
                     "x": 3,
                 },
             ],
@@ -1412,11 +1434,11 @@ mod tests {
             result,
             vec![
                 &json!({
-                    "__typename": "A",
+                    TYPENAME: "A",
                     "x": 0,
                 }),
                 &json!({
-                    "__typename": "A",
+                    TYPENAME: "A",
                     "x": 3,
                 }),
             ],
