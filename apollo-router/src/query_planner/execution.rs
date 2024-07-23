@@ -179,7 +179,7 @@ impl PlanNode {
                 }
                 PlanNode::Flatten(FlattenNode { path, node }) => {
                     // Note that the span must be `info` as we need to pick this up in apollo tracing
-                    let current_dir = current_dir.join(path.remove_empty_key_root());
+                    let current_dir = current_dir.flatten(path);
                     let (v, err) = node
                         .execute_recursively(
                             parameters,

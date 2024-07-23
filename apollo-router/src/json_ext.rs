@@ -819,17 +819,20 @@ fn serialize_flatten<S>(
 where
     S: serde::Serializer,
 {
-    let tc_string = if let Some(c) = type_conditions {
-        if !c.is_empty() {
-            format!("|[{}]", c.join(","))
-        } else {
-            "".to_string()
+    let key = "@";
+    let formatted;
+    let res: &str = match type_conditions {
+        Some(c) => {
+            if c.is_empty() {
+                key
+            } else {
+                formatted = format!("{}|[{}]", key, c.join(","));
+                formatted.as_str()
+            }
         }
-    } else {
-        "".to_string()
+        None => key,
     };
-    let res = format!("@{}", tc_string);
-    serializer.serialize_str(res.as_str())
+    serializer.serialize_str(res)
 }
 
 fn deserialize_key<'de, D>(deserializer: D) -> Result<(String, Option<TypeConditions>), D::Error>
@@ -881,17 +884,19 @@ fn serialize_key<S>(
 where
     S: serde::Serializer,
 {
-    let tc_string = if let Some(c) = type_conditions {
-        if !c.is_empty() {
-            format!("|[{}]", c.join(","))
-        } else {
-            "".to_string()
+    let formatted;
+    let res: &String = match type_conditions {
+        Some(c) => {
+            if c.is_empty() {
+                key
+            } else {
+                formatted = format!("{}|[{}]", key, c.join(","));
+                &formatted
+            }
         }
-    } else {
-        "".to_string()
+        None => key,
     };
-    let res = format!("{}{}", key, tc_string);
-    serializer.serialize_str(res.as_str())
+    serializer.serialize_str(res)
 }
 
 fn deserialize_fragment<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -1026,16 +1031,24 @@ impl Path {
         if self.is_empty() {
             None
         } else {
-            Some(Path(self.iter().take(self.len() - 1).cloned().collect()))
+            let mut new = self.clone();
+            new.pop();
+            Some(new)
         }
     }
 
     pub fn join(&self, other: impl AsRef<Self>) -> Self {
         let other = other.as_ref();
-        let mut new = Vec::with_capacity(self.len() + other.len());
-        new.extend(self.iter().cloned());
-        new.extend(other.iter().cloned());
-        Path(new)
+        let mut new = self.clone();
+        new.0.extend(other.0.clone());
+        new
+    }
+
+    pub fn flatten(&self, other: impl AsRef<Self>) -> Self {
+        let other = other.as_ref();
+        let mut new = self.clone();
+        new.0.extend(other.remove_empty_key_root().0);
+        new
     }
 
     pub fn push(&mut self, element: PathElement) {
@@ -1052,15 +1065,10 @@ impl Path {
 
     pub fn last_key(&mut self) -> Option<String> {
         self.0.last().and_then(|elem| match elem {
-            PathElement::Key(key, type_conditions) => {
-                let mut tc = String::new();
-                if let Some(c) = type_conditions {
-                    if !c.is_empty() {
-                        tc = format!("|[{}]", c.join(","));
-                    }
-                };
-                Some(format!("{}{}", key, tc))
-            }
+            PathElement::Key(key, type_conditions) => match type_conditions {
+                Some(c) => Some(format!("{}|[{}]", key, c.join(","))),
+                None => Some(key.clone()),
+            },
             _ => None,
         })
     }
@@ -1124,14 +1132,10 @@ impl fmt::Display for Path {
             write!(f, "/")?;
             match element {
                 PathElement::Index(index) => write!(f, "{index}")?,
-                PathElement::Key(key, type_conditions) => {
-                    write!(f, "{key}")?;
-                    if let Some(c) = type_conditions {
-                        if !c.is_empty() {
-                            write!(f, "|[{}]", c.join(","))?;
-                        }
-                    };
-                }
+                PathElement::Key(key, type_conditions) => match type_conditions {
+                    Some(c) => write!(f, "{}|[{}]", key, c.join(","))?,
+                    None => write!(f, "{}", key)?,
+                },
                 PathElement::Flatten(type_conditions) => {
                     write!(f, "@")?;
                     if let Some(c) = type_conditions {
