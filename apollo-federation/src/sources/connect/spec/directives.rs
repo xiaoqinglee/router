@@ -27,9 +27,10 @@ use crate::error::FederationError;
 use crate::schema::position::ObjectOrInterfaceFieldDefinitionPosition;
 use crate::schema::position::ObjectOrInterfaceFieldDirectivePosition;
 use crate::schema::FederationSchema;
-use crate::sources::connect::json_selection::JSONSelection;
+use crate::sources::connect::selection::JSONSelection;
 use crate::sources::connect::spec::schema::CONNECT_SOURCE_ARGUMENT_NAME;
 use crate::sources::connect::HeaderSource;
+use crate::sources::connect::Selection;
 
 macro_rules! internal {
     ($s:expr) => {
@@ -279,15 +280,11 @@ impl ConnectDirectiveArguments {
                 let selection_value = arg.value.as_str().ok_or(internal!(
                     "`selection` field in `@connect` directive is not a string"
                 ))?;
-                let (remainder, selection_value) = JSONSelection::parse(selection_value)
-                    .map_err(|_| internal!("invalid JSON selection"))?;
-                if !remainder.is_empty() {
-                    return Err(internal!(format!(
-                        "`selection` field in `@connect` directive could not be fully parsed: the following was left over: {remainder}"
-                    )));
+                // TODO: don't throw away selection error
+                selection = Selection::parse_json_selection(selection_value).ok();
+                if selection.is_none() {
+                    selection = Some(Selection::parse_jq(selection_value)?);
                 }
-
-                selection = Some(selection_value);
             } else if arg_name == CONNECT_ENTITY_ARGUMENT_NAME.as_str() {
                 let entity_value = arg.value.to_bool().ok_or(internal!(
                     "`entity` field in `@connect` directive is not a boolean"

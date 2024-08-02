@@ -210,7 +210,7 @@ mod helpers {
     use crate::sources::connect::ConnectSpecDefinition;
     use crate::sources::connect::Connector;
     use crate::sources::connect::EntityResolver;
-    use crate::sources::connect::JSONSelection;
+    use crate::sources::connect::Selection;
     use crate::subgraph::spec::EXTERNAL_DIRECTIVE_NAME;
     use crate::subgraph::spec::KEY_DIRECTIVE_NAME;
     use crate::subgraph::spec::REQUIRES_DIRECTIVE_NAME;
@@ -317,9 +317,12 @@ mod helpers {
                     )
                     .walk((
                         object,
-                        connector.selection.next_subselection().cloned().ok_or(
-                            FederationError::internal("empty selections are not allowed"),
-                        )?,
+                        connector
+                            .selection
+                            .group()
+                            .ok_or(FederationError::internal(
+                                "empty selections are not allowed",
+                            ))?,
                     ))?;
                 }
 
@@ -536,8 +539,8 @@ mod helpers {
                                             to_schema,
                                             &self.directive_deny_list,
                                         );
-                                        let (_, parsed) =
-                                            JSONSelection::parse(&sub_selection).map_err(|e| {
+                                        let selection =
+                                            Selection::parse_json_selection(&sub_selection).map_err(|e| {
                                                 FederationError::internal(format!("could not parse fake selection for sibling field: {e}"))
                                             })?;
 
@@ -554,7 +557,7 @@ mod helpers {
 
                                         visitor.walk((
                                             output_type,
-                                            parsed.next_subselection().cloned().ok_or(
+                                           selection.group().ok_or(
                                                 FederationError::internal(
                                                     "empty selections are not allowed",
                                                 ),

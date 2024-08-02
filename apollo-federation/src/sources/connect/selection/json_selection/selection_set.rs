@@ -25,13 +25,13 @@ use apollo_compiler::Node;
 use indexmap::IndexMap;
 use multimap::MultiMap;
 
+use super::Alias;
+use super::JSONSelection;
+use super::Key;
+use super::NamedSelection;
+use super::PathSelection;
+use super::SubSelection;
 use super::TYPENAMES;
-use crate::sources::connect::json_selection::Alias;
-use crate::sources::connect::json_selection::NamedSelection;
-use crate::sources::connect::JSONSelection;
-use crate::sources::connect::Key;
-use crate::sources::connect::PathSelection;
-use crate::sources::connect::SubSelection;
 
 impl JSONSelection {
     /// Apply a selection set to create a new [`JSONSelection`]
@@ -236,8 +236,6 @@ mod tests {
     use apollo_compiler::validation::Valid;
     use apollo_compiler::Schema;
     use pretty_assertions::assert_eq;
-
-    use crate::sources::connect::ApplyTo;
 
     fn selection_set(schema: &Valid<Schema>, s: &str) -> SelectionSet {
         apollo_compiler::ExecutableDocument::parse_and_validate(schema, s, "./")

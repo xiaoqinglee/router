@@ -1,4 +1,4 @@
-use apollo_federation::sources::connect::ApplyToError;
+use apollo_federation::sources::connect::TransformError;
 use bytes::Bytes;
 use futures::future::ready;
 use futures::stream::once;
@@ -171,9 +171,8 @@ impl ConnectorContext {
 
 pub(crate) struct SelectionData {
     pub(crate) source: String,
-    pub(crate) transformed: String,
     pub(crate) result: Option<serde_json_bytes::Value>,
-    pub(crate) errors: Vec<ApplyToError>,
+    pub(crate) errors: Vec<TransformError>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,7 +193,6 @@ struct ConnectorDebugHttpRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ConnectorDebugSelection {
     source: String,
-    transformed: String,
     result: Option<serde_json_bytes::Value>,
     errors: Vec<serde_json_bytes::Value>,
 }
@@ -222,9 +220,8 @@ fn serialize_request(
             content: body.clone(),
             selection: selection_data.map(|selection| ConnectorDebugSelection {
                 source: selection.source,
-                transformed: selection.transformed,
                 result: selection.result,
-                errors: aggregate_apply_to_errors(&selection.errors),
+                errors: aggregate_transform_errors(&selection.errors),
             }),
         }),
     }
@@ -259,22 +256,21 @@ fn serialize_response(
             content: json_body.clone(),
             selection: selection_data.map(|selection| ConnectorDebugSelection {
                 source: selection.source,
-                transformed: selection.transformed,
                 result: selection.result,
-                errors: aggregate_apply_to_errors(&selection.errors),
+                errors: aggregate_transform_errors(&selection.errors),
             }),
         },
     }
 }
 
-fn aggregate_apply_to_errors(errors: &[ApplyToError]) -> Vec<serde_json_bytes::Value> {
+fn aggregate_transform_errors(errors: &[TransformError]) -> Vec<serde_json_bytes::Value> {
     let mut aggregated = vec![];
 
-    for (key, group) in &errors.iter().group_by(|e| (e.message(), e.path())) {
+    // TODO: group by path again
+    for (key, group) in &errors.iter().group_by(|e| e.to_string()) {
         let group = group.collect_vec();
         aggregated.push(json!({
-            "message": key.0,
-            "path": key.1,
+            "message": key,
             "count": group.len(),
         }));
     }

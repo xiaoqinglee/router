@@ -19,26 +19,28 @@ use super::SchemaVisitor;
 use crate::error::FederationError;
 use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
-use crate::sources::connect::json_selection::NamedSelection;
-use crate::sources::connect::SubSelection;
+use crate::sources::connect::selection::Group;
+use crate::sources::connect::selection::SelectionField;
 
 /// Type alias for JSONSelection group info
 ///
 /// A JSONSelection has subselections which do not have a way to lookup the parent subselection
 /// nor the field name corresponding to that selection, so we need to keep the matching schema object
 /// type when validating selections against concrete types.
-pub(crate) type JSONSelectionGroup = (ObjectTypeDefinitionPosition, SubSelection);
+pub(crate) type GroupWithPosition<'a> = (ObjectTypeDefinitionPosition, Group<'a>);
 
-impl FieldVisitor<NamedSelection> for SchemaVisitor<'_, ObjectTypeDefinitionPosition, ObjectType> {
+impl<'a> FieldVisitor<SelectionField<'a>>
+    for SchemaVisitor<'_, ObjectTypeDefinitionPosition, ObjectType>
+{
     type Error = FederationError;
 
-    fn visit<'a>(&mut self, field: NamedSelection) -> Result<(), Self::Error> {
+    fn visit(&mut self, field: SelectionField<'a>) -> Result<(), Self::Error> {
         let (definition, r#type) = self.type_stack.last_mut().ok_or(FederationError::internal(
             "tried to visit a field in a group not yet entered",
         ))?;
 
         // Get the type of the field so we know how to visit it
-        let field_name = Name::new(field.name())?;
+        let field_name = Name::new(field.name)?;
         let field = definition
             .field(field_name.clone())
             .get(self.original_schema.schema())?;
@@ -123,28 +125,30 @@ impl FieldVisitor<NamedSelection> for SchemaVisitor<'_, ObjectTypeDefinitionPosi
     }
 }
 
-impl GroupVisitor<JSONSelectionGroup, NamedSelection>
+impl<'a> GroupVisitor<GroupWithPosition<'a>, SelectionField<'a>>
     for SchemaVisitor<'_, ObjectTypeDefinitionPosition, ObjectType>
 {
     fn get_group_fields(
         &self,
-        (_, group): JSONSelectionGroup,
-    ) -> Result<Vec<NamedSelection>, <Self as FieldVisitor<NamedSelection>>::Error> {
+        (_, group): GroupWithPosition<'a>,
+    ) -> Result<Vec<SelectionField<'a>>, <Self as FieldVisitor<SelectionField>>::Error> {
         Ok(group
-            .selections_iter()
-            .sorted_by_key(|s| s.name())
+            .fields()
+            .map_err(|err| FederationError::internal(err.to_string()))?
+            .iter()
+            .sorted_by_key(|field| field.name)
             .cloned()
             .collect())
     }
 
     fn try_get_group_for_field(
         &self,
-        field: &NamedSelection,
-    ) -> Result<Option<JSONSelectionGroup>, FederationError> {
+        field: &SelectionField<'a>,
+    ) -> Result<Option<GroupWithPosition<'a>>, FederationError> {
         let (definition, _) = self.type_stack.last().ok_or(FederationError::internal(
             "tried to get fields on a group not yet visited",
         ))?;
-        let field_name = Name::new(field.name())?;
+        let field_name = Name::new(field.name)?;
 
         let field_type_name = definition
             .field(field_name)
@@ -158,13 +162,13 @@ impl GroupVisitor<JSONSelectionGroup, NamedSelection>
             return Ok(None);
         };
 
-        Ok(field.next_subselection().cloned().map(|s| (field_type, s)))
+        Ok(field.group.as_ref().map(|group| (field_type, *group)))
     }
 
     fn enter_group(
         &mut self,
-        (group_type, group): JSONSelectionGroup,
-    ) -> Result<Vec<NamedSelection>, FederationError> {
+        (group_type, group): GroupWithPosition<'a>,
+    ) -> Result<Vec<SelectionField<'a>>, FederationError> {
         try_pre_insert!(self.to_schema, group_type)?;
         let def = group_type.get(self.original_schema.schema())?;
 

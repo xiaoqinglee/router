@@ -5,20 +5,16 @@ use std::hash::Hasher;
 use apollo_compiler::Name;
 
 pub mod expand;
-mod json_selection;
 mod models;
+mod selection;
 pub(crate) mod spec;
 mod url_template;
 pub mod validation;
 
 use apollo_compiler::name;
-pub use json_selection::ApplyTo;
-pub use json_selection::ApplyToError;
-pub use json_selection::JSONSelection;
-pub use json_selection::Key;
-pub use json_selection::PathSelection;
-pub use json_selection::SubSelection;
 pub use models::CustomConfiguration;
+pub use selection::Selection;
+pub use selection::TransformError;
 pub(crate) use spec::ConnectSpecDefinition;
 pub use url_template::URLTemplate;
 

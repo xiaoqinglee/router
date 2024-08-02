@@ -10,10 +10,11 @@ use url::Url;
 use super::spec::ConnectHTTPArguments;
 use super::spec::SourceHTTPArguments;
 use super::ConnectId;
-use super::JSONSelection;
+use super::Selection;
 use super::URLTemplate;
 use crate::error::FederationError;
 use crate::schema::ValidFederationSchema;
+use crate::sources::connect::selection::JSONSelection;
 use crate::sources::connect::spec::extract_connect_directive_arguments;
 use crate::sources::connect::spec::extract_source_directive_arguments;
 use crate::sources::connect::ConnectSpecDefinition;
@@ -23,7 +24,7 @@ use crate::sources::connect::ConnectSpecDefinition;
 pub struct Connector {
     pub id: ConnectId,
     pub transport: HttpJsonTransport,
-    pub selection: JSONSelection,
+    pub selection: Selection,
     pub config: Option<CustomConfiguration>,
 
     /// The type of entity resolver to use for this connector
@@ -144,7 +145,7 @@ pub struct HttpJsonTransport {
     pub connect_template: URLTemplate,
     pub method: HTTPMethod,
     pub headers: IndexMap<HeaderName, HeaderSource>,
-    pub body: Option<JSONSelection>,
+    pub body: Option<JSONSelection>, // TODO: allow jq here too
 }
 
 impl HttpJsonTransport {

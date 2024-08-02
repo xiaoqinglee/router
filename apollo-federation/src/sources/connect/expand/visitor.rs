@@ -1,3 +1,5 @@
+// TODO: delete this?
+
 use apollo_compiler::ast::FieldDefinition;
 use apollo_compiler::schema::Component;
 use apollo_compiler::schema::DirectiveList;

@@ -14,27 +14,6 @@ use super::helpers::json_type_name;
 use super::parser::*;
 
 pub trait ApplyTo {
-    // Applying a selection to a JSON value produces a new JSON value, along
-    // with any/all errors encountered in the process. The value is represented
-    // as an Option to allow for undefined/missing values (which JSON does not
-    // explicitly support), which are distinct from null values (which it does
-    // support).
-    fn apply_to(&self, data: &JSON) -> (Option<JSON>, Vec<ApplyToError>) {
-        self.apply_with_vars(data, &IndexMap::default())
-    }
-
-    fn apply_with_vars(
-        &self,
-        data: &JSON,
-        vars: &IndexMap<String, JSON>,
-    ) -> (Option<JSON>, Vec<ApplyToError>) {
-        let mut input_path = vec![];
-        // Using IndexSet over HashSet to preserve the order of the errors.
-        let mut errors = IndexSet::default();
-        let value = self.apply_to_path(data, vars, &mut input_path, &mut errors);
-        (value, errors.into_iter().collect())
-    }
-
     // This is the trait method that should be implemented and called
     // recursively by the various JSONSelection types.
     fn apply_to_path(

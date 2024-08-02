@@ -37,16 +37,14 @@ subgraphs:
                  {name: "x-insert-multi-value", value: "first,second"}
                 ]
               }
-              selection: "id name"
+              selection: "{id name}"
             )
         
           me: User @connect(
               source: "json"
               http: { GET: "/users/{$$config.id}" }
               selection: """
-              id
-              name
-              username
+              {id name username}
               """
             )
 
@@ -55,9 +53,7 @@ subgraphs:
               source: "json"
               http: { GET: "/users/{$$args.id}" }
               selection: """
-              id
-              name
-              username
+              {id name username}
               """
               entity: true
             )
@@ -66,7 +62,7 @@ subgraphs:
             @connect(
               source: "json"
               http: { GET: "/posts" }
-              selection: "id title user: { id: userId }"
+              selection: "{id title user: { id: .userId }}"
             )
         }
 
@@ -80,7 +76,7 @@ subgraphs:
             @connect(
               source: "json"
               http: { GET: "/users/{$$this.c}" }
-              selection: "$.phone"
+              selection: "phone"
             )
         }
 

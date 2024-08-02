@@ -475,11 +475,11 @@ mod tests {
     use apollo_compiler::name;
     use apollo_compiler::ExecutableDocument;
     use apollo_compiler::Schema;
+    use apollo_federation::sources::connect;
     use apollo_federation::sources::connect::ConnectId;
     use apollo_federation::sources::connect::Connector;
     use apollo_federation::sources::connect::HTTPMethod;
     use apollo_federation::sources::connect::HttpJsonTransport;
-    use apollo_federation::sources::connect::JSONSelection;
     use insta::assert_debug_snapshot;
     use url::Url;
 
@@ -1275,7 +1275,7 @@ mod tests {
                 headers: Default::default(),
                 body: Default::default(),
             },
-            selection: JSONSelection::parse(".data").unwrap().1,
+            selection: connect::Selection::parse_json_selection(".data").unwrap(),
             entity_resolver: None,
             config: Default::default(),
         };

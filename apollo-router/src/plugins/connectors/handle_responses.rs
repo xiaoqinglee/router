@@ -1,6 +1,5 @@
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
-use apollo_federation::sources::connect::ApplyTo;
 use apollo_federation::sources::connect::Connector;
 use serde_json_bytes::ByteString;
 use serde_json_bytes::Value;
@@ -68,11 +67,8 @@ pub(crate) async fn handle_responses(
 
             let mut res_data = {
                 // TODO: caching of the transformed JSONSelection with the selection set applied?
-                let transformed_selection = connector
-                    .selection
-                    .apply_selection_set(response_key.selection_set());
-
-                let (res, apply_to_errors) = transformed_selection.apply_with_vars(
+                let (res, apply_to_errors) = connector.selection.transform(
+                    response_key.selection_set(),
                     &json_data,
                     &response_key.inputs().merge(connector.config.as_ref()),
                 );
@@ -83,7 +79,6 @@ pub(crate) async fn handle_responses(
                         &json_data,
                         Some(SelectionData {
                             source: connector.selection.to_string(),
-                            transformed: transformed_selection.to_string(),
                             result: res.clone(),
                             errors: apply_to_errors,
                         }),
@@ -237,12 +232,12 @@ mod tests {
     use apollo_compiler::Name;
     use apollo_compiler::Node;
     use apollo_compiler::Schema;
+    use apollo_federation::sources::connect;
     use apollo_federation::sources::connect::ConnectId;
     use apollo_federation::sources::connect::Connector;
     use apollo_federation::sources::connect::EntityResolver;
     use apollo_federation::sources::connect::HTTPMethod;
     use apollo_federation::sources::connect::HttpJsonTransport;
-    use apollo_federation::sources::connect::JSONSelection;
     use insta::assert_debug_snapshot;
     use url::Url;
 
@@ -267,7 +262,7 @@ mod tests {
                 headers: Default::default(),
                 body: Default::default(),
             },
-            selection: JSONSelection::parse(".data").unwrap().1,
+            selection: connect::Selection::parse_json_selection(".data").unwrap(),
             entity_resolver: None,
             config: Default::default(),
         };
@@ -354,7 +349,7 @@ mod tests {
                 headers: Default::default(),
                 body: Default::default(),
             },
-            selection: JSONSelection::parse(".data { id }").unwrap().1,
+            selection: connect::Selection::parse_json_selection(".data { id }").unwrap(),
             entity_resolver: Some(EntityResolver::Explicit),
             config: Default::default(),
         };
@@ -466,7 +461,7 @@ mod tests {
                 headers: Default::default(),
                 body: Default::default(),
             },
-            selection: JSONSelection::parse(".data").unwrap().1,
+            selection: connect::Selection::parse_json_selection(".data").unwrap(),
             entity_resolver: Some(EntityResolver::Implicit),
             config: Default::default(),
         };
@@ -572,7 +567,7 @@ mod tests {
                 headers: Default::default(),
                 body: Default::default(),
             },
-            selection: JSONSelection::parse(".data").unwrap().1,
+            selection: connect::Selection::parse_json_selection(".data").unwrap(),
             entity_resolver: Some(EntityResolver::Explicit),
             config: Default::default(),
         };

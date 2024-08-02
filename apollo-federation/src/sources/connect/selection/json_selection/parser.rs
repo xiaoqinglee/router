@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use apollo_compiler::collections::IndexMap;
+use apollo_compiler::collections::IndexSet;
 use nom::branch::alt;
 use nom::character::complete::char;
 use nom::character::complete::one_of;
@@ -17,6 +19,8 @@ use serde::Serialize;
 use serde_json_bytes::Value as JSON;
 
 use super::helpers::spaces_or_comments;
+use crate::sources::connect::selection::json_selection::ApplyTo;
+use crate::sources::connect::selection::json_selection::ApplyToError;
 
 // JSONSelection     ::= NakedSubSelection | PathSelection
 // NakedSubSelection ::= NamedSelection* StarSelection?
@@ -68,6 +72,27 @@ impl JSONSelection {
             JSONSelection::Named(subselect) => Some(subselect),
             JSONSelection::Path(path) => path.next_mut_subselection(),
         }
+    }
+
+    // Applying a selection to a JSON value produces a new JSON value, along
+    // with any/all errors encountered in the process. The value is represented
+    // as an Option to allow for undefined/missing values (which JSON does not
+    // explicitly support), which are distinct from null values (which it does
+    // support).
+    pub(crate) fn apply_to(&self, data: &JSON) -> (Option<JSON>, Vec<ApplyToError>) {
+        self.apply_with_vars(data, &IndexMap::default())
+    }
+
+    pub fn apply_with_vars(
+        &self,
+        data: &JSON,
+        vars: &IndexMap<String, JSON>,
+    ) -> (Option<JSON>, Vec<ApplyToError>) {
+        let mut input_path = vec![];
+        // Using IndexSet over HashSet to preserve the order of the errors.
+        let mut errors = IndexSet::default();
+        let value = self.apply_to_path(data, vars, &mut input_path, &mut errors);
+        (value, errors.into_iter().collect())
     }
 }
 

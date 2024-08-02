@@ -5,11 +5,11 @@
 //! pretty printing trait which is then implemented on the various sub types
 //! of the JSONSelection tree.
 
-use crate::sources::connect::json_selection::JSONSelection;
-use crate::sources::connect::json_selection::NamedSelection;
-use crate::sources::connect::json_selection::PathSelection;
-use crate::sources::connect::json_selection::StarSelection;
-use crate::sources::connect::json_selection::SubSelection;
+use super::JSONSelection;
+use super::NamedSelection;
+use super::PathSelection;
+use super::StarSelection;
+use super::SubSelection;
 
 impl std::fmt::Display for JSONSelection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -203,13 +203,7 @@ impl PrettyPrintable for StarSelection {
 
 #[cfg(test)]
 mod tests {
-    use crate::sources::connect::json_selection::pretty::indent_chars;
-    use crate::sources::connect::json_selection::NamedSelection;
-    use crate::sources::connect::json_selection::PrettyPrintable;
-    use crate::sources::connect::json_selection::StarSelection;
-    use crate::sources::connect::PathSelection;
-    use crate::sources::connect::SubSelection;
-
+    use super::*;
     // Test all valid pretty print permutations
     fn test_permutations(selection: impl PrettyPrintable, expected: &str) {
         let indentation = 4;

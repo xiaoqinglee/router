@@ -111,9 +111,9 @@ pub trait JSONSelectionVisitor: Sized {
 mod tests {
     use insta::assert_snapshot;
 
+    use super::JSONSelection;
     use super::JSONSelectionVisitor;
     use crate::error::FederationError;
-    use crate::sources::connect::JSONSelection;
 
     /// Visitor for tests.
     ///

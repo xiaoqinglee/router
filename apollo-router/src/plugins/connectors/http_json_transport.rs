@@ -2,9 +2,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use apollo_compiler::collections::IndexMap;
-use apollo_federation::sources::connect::ApplyTo;
 use apollo_federation::sources::connect::HeaderSource;
 use apollo_federation::sources::connect::HttpJsonTransport;
+use apollo_federation::sources::connect::TransformError;
 use apollo_federation::sources::connect::URLTemplate;
 use displaydoc::Display;
 use http::header::ACCEPT;
@@ -106,9 +106,11 @@ pub(crate) fn make_request(
             json_body.as_ref(),
             transport.body.as_ref().map(|body| SelectionData {
                 source: body.to_string(),
-                transformed: body.to_string(),
                 result: json_body.clone(),
-                errors: apply_to_errors,
+                errors: apply_to_errors
+                    .into_iter()
+                    .map(TransformError::Json)
+                    .collect(),
             }),
         );
     }

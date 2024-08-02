@@ -5,8 +5,9 @@ use http::HeaderName;
 use url::Url;
 
 use crate::schema::position::ObjectOrInterfaceFieldDirectivePosition;
-use crate::sources::connect::json_selection::JSONSelection;
+use crate::sources::connect::selection::JSONSelection;
 use crate::sources::connect::HeaderSource;
+use crate::sources::connect::Selection;
 
 pub(crate) const CONNECT_DIRECTIVE_NAME_IN_SPEC: Name = name!("connect");
 pub(crate) const CONNECT_SOURCE_ARGUMENT_NAME: Name = name!("source");
@@ -82,7 +83,7 @@ pub(crate) struct ConnectDirectiveArguments {
     ///
     /// Uses the JSONSelection syntax to define a mapping of connector response to
     /// GraphQL schema.
-    pub(crate) selection: JSONSelection,
+    pub(crate) selection: Selection,
 
     /// Entity resolver marker
     ///

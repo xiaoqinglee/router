@@ -196,15 +196,17 @@ impl<'a, Group, GroupType> SchemaVisitor<'a, Group, GroupType> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use insta::assert_snapshot;
     use itertools::Itertools;
 
     use crate::error::FederationError;
     use crate::sources::connect::expand::visitors::FieldVisitor;
     use crate::sources::connect::expand::visitors::GroupVisitor;
-    use crate::sources::connect::json_selection::NamedSelection;
-    use crate::sources::connect::JSONSelection;
-    use crate::sources::connect::SubSelection;
+    use crate::sources::connect::selection::Group;
+    use crate::sources::connect::selection::SelectionField;
+    use crate::sources::connect::Selection;
 
     /// Visitor for tests.
     ///
@@ -237,42 +239,43 @@ mod tests {
         result
     }
 
-    impl FieldVisitor<NamedSelection> for TestVisitor<'_> {
+    impl<'a> FieldVisitor<SelectionField<'a>> for TestVisitor<'_> {
         type Error = FederationError;
 
-        fn visit<'a>(&mut self, field: NamedSelection) -> Result<(), Self::Error> {
+        fn visit(&mut self, field: SelectionField<'a>) -> Result<(), Self::Error> {
             self.visited.push((
                 self.last_depth().unwrap_or_default(),
-                field.name().to_string(),
+                field.name.to_string(),
             ));
 
             Ok(())
         }
     }
 
-    impl GroupVisitor<SubSelection, NamedSelection> for TestVisitor<'_> {
+    impl<'a> GroupVisitor<Group<'a>, SelectionField<'a>> for TestVisitor<'_> {
         fn try_get_group_for_field(
             &self,
-            field: &NamedSelection,
-        ) -> Result<Option<SubSelection>, FederationError> {
-            Ok(field.next_subselection().cloned())
+            field: &SelectionField<'a>,
+        ) -> Result<Option<Group<'a>>, FederationError> {
+            Ok(field.group.clone())
         }
 
         fn get_group_fields(
             &self,
-            group: SubSelection,
-        ) -> Result<Vec<NamedSelection>, FederationError> {
+            group: Group<'a>,
+        ) -> Result<Vec<SelectionField<'a>>, FederationError> {
             Ok(group
-                .selections_iter()
-                .sorted_by_key(|s| s.name())
-                .cloned()
+                .fields()
+                .unwrap()
+                .into_iter()
+                .sorted_by_key(|s| s.name)
                 .collect())
         }
 
         fn enter_group(
             &mut self,
-            group: SubSelection,
-        ) -> Result<Vec<NamedSelection>, FederationError> {
+            group: Group<'a>,
+        ) -> Result<Vec<SelectionField<'a>>, FederationError> {
             let next_depth = self.last_depth().map(|d| d + 1).unwrap_or(0);
             self.depth_stack.push(next_depth);
             self.get_group_fields(group)
@@ -288,12 +291,9 @@ mod tests {
     fn it_iterates_over_empty_path() {
         let mut visited = Vec::new();
         let visitor = TestVisitor::new(&mut visited);
-        let (unmatched, selection) = JSONSelection::parse("").unwrap();
-        assert!(unmatched.is_empty());
+        let selection = Selection::parse_json_selection("").unwrap();
 
-        visitor
-            .walk(selection.next_subselection().cloned().unwrap())
-            .unwrap();
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
         assert_snapshot!(print_visited(visited), @"");
     }
 
@@ -301,12 +301,24 @@ mod tests {
     fn it_iterates_over_simple_selection() {
         let mut visited = Vec::new();
         let visitor = TestVisitor::new(&mut visited);
-        let (unmatched, selection) = JSONSelection::parse("a b c d").unwrap();
-        assert!(unmatched.is_empty());
+        let selection = Selection::parse_json_selection("a b c d").unwrap();
 
-        visitor
-            .walk(selection.next_subselection().cloned().unwrap())
-            .unwrap();
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
+        assert_snapshot!(print_visited(visited), @r###"
+        a
+        b
+        c
+        d
+        "###);
+    }
+
+    #[test]
+    fn it_iterates_over_simple_jq() {
+        let mut visited = Vec::new();
+        let visitor = TestVisitor::new(&mut visited);
+        let selection = Selection::parse_jq(r#"{a, b, c, d}"#).unwrap();
+
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
         assert_snapshot!(print_visited(visited), @r###"
         a
         b
@@ -319,13 +331,9 @@ mod tests {
     fn it_iterates_over_aliased_selection() {
         let mut visited = Vec::new();
         let visitor = TestVisitor::new(&mut visited);
-        let (unmatched, selection) =
-            JSONSelection::parse("a: one b: two c: three d: four").unwrap();
-        assert!(unmatched.is_empty());
+        let selection = Selection::parse_json_selection("a: one b: two c: three d: four").unwrap();
 
-        visitor
-            .walk(selection.next_subselection().cloned().unwrap())
-            .unwrap();
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
         assert_snapshot!(print_visited(visited), @r###"
         a
         b
@@ -338,12 +346,9 @@ mod tests {
     fn it_iterates_over_nested_selection() {
         let mut visited = Vec::new();
         let visitor = TestVisitor::new(&mut visited);
-        let (unmatched, selection) = JSONSelection::parse("a { b { c { d { e } } } } f").unwrap();
-        assert!(unmatched.is_empty());
+        let selection = Selection::parse_json_selection("a { b { c { d { e } } } } f").unwrap();
 
-        visitor
-            .walk(selection.next_subselection().cloned().unwrap())
-            .unwrap();
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
         assert_snapshot!(print_visited(visited), @r###"
         a
         |  b
@@ -358,7 +363,7 @@ mod tests {
     fn it_iterates_over_complex_selection() {
         let mut visited = Vec::new();
         let visitor = TestVisitor::new(&mut visited);
-        let (unmatched, selection) = JSONSelection::parse(
+        let selection = Selection::parse_json_selection(
             "id
             name
             username
@@ -382,11 +387,8 @@ mod tests {
             }",
         )
         .unwrap();
-        assert!(unmatched.is_empty());
 
-        visitor
-            .walk(selection.next_subselection().cloned().unwrap())
-            .unwrap();
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
         assert_snapshot!(print_visited(visited), @r###"
         address
         |  city
