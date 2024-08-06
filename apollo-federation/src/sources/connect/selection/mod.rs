@@ -1,15 +1,10 @@
 use std::fmt::Display;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use apollo_compiler::collections::IndexMap;
 use apollo_compiler::executable::SelectionSet;
 use itertools::Itertools;
-use jaq_interpret::Ctx;
-use jaq_interpret::FilterT;
-use jaq_interpret::ParseCtx;
-use jaq_interpret::RcIter;
-use jaq_interpret::Val;
+use jaq_syn::filter::BinaryOp;
 use jaq_syn::filter::Filter;
 use jaq_syn::filter::KeyVal;
 use jaq_syn::string::Part;
@@ -18,7 +13,8 @@ use jaq_syn::Main;
 use jaq_syn::Parser;
 use jaq_syn::Spanned;
 pub use json_selection::JSONSelection;
-pub use json_selection::JSONSelectionVisitor; // TODO: use the new visitors for validation
+pub use json_selection::JSONSelectionVisitor;
+// TODO: use the new visitors for validation
 use json_selection::SubSelection;
 use serde_json_bytes::Value;
 
@@ -44,23 +40,25 @@ impl Selection {
     pub(crate) fn group(&self) -> Option<Group> {
         match self {
             Selection::Json { parsed, .. } => parsed.next_subselection().map(Group::Json),
-            Selection::Jq { parsed, .. } => match &parsed.body.0 {
-                Filter::Object(keyvals) => Some(Group::Jq(keyvals)),
-                other => {
-                    let err = format!("Expected object filter, got: {:?}", other);
-                    None
-                }
-            },
+            Selection::Jq { parsed, .. } => jq_group(&parsed.body.0),
         }
     }
 
-    pub fn parse_json_selection(source: &str) -> Result<Self, String> {
-        let (remainder, parsed) = JSONSelection::parse(&source).map_err(|err| err.to_string())?;
+    pub fn parse(source: &str) -> Result<Self, FederationError> {
+        if source.starts_with("# jq") {
+            Self::parse_jq(source)
+        } else {
+            Self::parse_json_selection(source)
+        }
+    }
+
+    pub fn parse_json_selection(source: &str) -> Result<Self, FederationError> {
+        let (remainder, parsed) = JSONSelection::parse(&source)
+            .map_err(|err| FederationError::internal(err.to_string()))?;
         if remainder != "" {
-            return Err(format!(
-                "JSONSelection parsing failed, trailing characters: {}",
-                remainder
-            ));
+            return Err(FederationError::internal(format!(
+                "JSONSelection parsing failed, trailing characters: {remainder}"
+            )));
         }
         Ok(Self::Json {
             source: Arc::from(source),
@@ -100,34 +98,24 @@ impl Selection {
                 let (res, errors) = transformed_selection.apply_with_vars(json, vars);
                 (res, errors.into_iter().map(TransformError::Json).collect())
             }
-            Selection::Jq { parsed, .. } => {
-                // TODO: make execution happen in router, dep not needed in apollo-federation
-                let mut defs = ParseCtx::new(Vec::new());
-                // TODO: only compile once per connector, not every request
-                let f = defs.compile(parsed.clone());
-                // TODO: stop needing to convert to/from serde_json_bytes
-                let json = serde_json::Value::from_str(&json.to_string()).unwrap();
-                // TODO: pass through vars here
-                let inputs = RcIter::new(core::iter::empty());
-                let out = f.run((Ctx::new([], &inputs), Val::from(json)));
-                let mut errs = Vec::new();
-                for res in out {
-                    match res {
-                        Err(err) => errs.push(TransformError::Jq(err)),
-                        Ok(val) => {
-                            return (
-                                Some(serde_json_bytes::Value::from(serde_json::Value::from(val))),
-                                errs,
-                            );
-                        }
-                    }
-                }
-                return (None, errs);
-            }
+            Selection::Jq { parsed, .. } => jq::execute(&json, vars, parsed),
         }
     }
 }
 
+fn jq_group(filter: &Filter) -> Option<Group> {
+    match filter {
+        Filter::Object(keyvals) => Some(Group::Jq(keyvals)),
+        Filter::Array(inner) => inner.as_ref().and_then(|filter| jq_group(&filter.0)),
+        Filter::Binary(_input, op, filter) => match op {
+            BinaryOp::Pipe(None) => jq_group(&filter.0),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum TransformError {
     Json(ApplyToError),
     Jq(jaq_interpret::Error),
@@ -177,10 +165,7 @@ impl<'a> Group<'a> {
                         match &field.parts[0] {
                             Part::Str(s) => Ok(SelectionField {
                                 name: s.as_str(),
-                                group: filter.as_ref().and_then(|(filter, _span)| match filter {
-                                    Filter::Object(keyvals) => Some(Group::Jq(keyvals)),
-                                    _ => None, // TODO: handle arrays of objects too!
-                                }),
+                                group: filter.as_ref().and_then(|spanned| jq_group(&spanned.0)),
                             }),
                             Part::Fun(_) => Err("expected string"),
                         }
@@ -189,10 +174,7 @@ impl<'a> Group<'a> {
                         Filter::Str(field) => match &field.parts[0] {
                             Part::Str(s) => Ok(SelectionField {
                                 name: s.as_str(),
-                                group: match &filter.0 {
-                                    Filter::Object(keyvals) => Some(Group::Jq(keyvals)),
-                                    _ => None, // TODO: handle arrays of objects too!
-                                },
+                                group: jq_group(&filter.0),
                             }),
                             Part::Fun(_) => Err("expected string"),
                         },

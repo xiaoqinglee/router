@@ -280,11 +280,8 @@ impl ConnectDirectiveArguments {
                 let selection_value = arg.value.as_str().ok_or(internal!(
                     "`selection` field in `@connect` directive is not a string"
                 ))?;
-                // TODO: don't throw away selection error
-                selection = Selection::parse_json_selection(selection_value).ok();
-                if selection.is_none() {
-                    selection = Some(Selection::parse_jq(selection_value)?);
-                }
+
+                selection = Some(Selection::parse(selection_value)?);
             } else if arg_name == CONNECT_ENTITY_ARGUMENT_NAME.as_str() {
                 let entity_value = arg.value.to_bool().ok_or(internal!(
                     "`entity` field in `@connect` directive is not a boolean"

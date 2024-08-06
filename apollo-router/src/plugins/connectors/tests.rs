@@ -629,7 +629,7 @@ async fn test_selection_set() {
                 owner_not_fragment: owner
               }
             }",
-        serde_json_bytes::json!({
+        json!({
         "owner": "foo",
         "repo": "bar",
         "skipField": false,

@@ -67,10 +67,11 @@ type Query
   @join__type(graph: CONNECTORS)
   @join__type(graph: GRAPHQL)
 {
-  users: [User] @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/users", headers: [{name: "x-new-name", from: "x-rename-connect"}, {name: "x-insert-multi-value", value: "first,second"}]}, selection: "id name"})
-  me: User @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/users/{$config.id}"}, selection: "{id, name, username}"})
-  user(id: ID!): User @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/users/{$args.id}"}, selection: "{id, name, username}", entity: true})
-  posts: [Post] @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/posts"}, selection: "id title user: { id: userId }"})
+  users: [User] @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/users", headers: [{name: "x-new-name", from: "x-rename-connect"}, {name: "x-insert-multi-value", value: "first,second"}]}, selection: "# jq\n[.[] | {id, name}]"})
+  me: User @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/users/{$config.id}"}, selection: "# jq\n{id, name, username}"})
+  user(id: ID!): User @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/users/{$args.id}"}, selection: "# jq\n{id, name, username}", entity: true})
+#  posts: [Post] @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/posts"}, selection: "id title user: { id: userId }"})
+  posts: [Post] @join__field(graph: CONNECTORS) @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/posts"}, selection: "# jq\n[.[]|{id, title, user: { __typename: \"User\", id: .userId }}]"})
 }
 
 type User
@@ -81,5 +82,5 @@ type User
   name: String @join__field(graph: CONNECTORS)
   username: String @join__field(graph: CONNECTORS)
   c: String @join__field(graph: CONNECTORS, external: true) @join__field(graph: GRAPHQL)
-  d: String @join__field(graph: CONNECTORS, requires: "c") @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/users/{$this.c}"}, selection: ".phone"})
+  d: String @join__field(graph: CONNECTORS, requires: "c") @join__directive(graphs: [CONNECTORS], name: "connect", args: {source: "json", http: {GET: "/users/{$this.c}"}, selection: "# jq\n.phone"})
 }

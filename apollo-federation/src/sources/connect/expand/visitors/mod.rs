@@ -196,8 +196,6 @@ impl<'a, Group, GroupType> SchemaVisitor<'a, Group, GroupType> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use insta::assert_snapshot;
     use itertools::Itertools;
 
@@ -355,6 +353,51 @@ mod tests {
         |  |  c
         |  |  |  d
         |  |  |  |  e
+        f
+        "###);
+    }
+
+    #[test]
+    fn it_iterates_over_nested_jq() {
+        let mut visited = Vec::new();
+        let visitor = TestVisitor::new(&mut visited);
+        let selection = Selection::parse_jq("{a: { b: { c: { d: { e } } } }, f}").unwrap();
+
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
+        assert_snapshot!(print_visited(visited), @r###"
+        a
+        |  b
+        |  |  c
+        |  |  |  d
+        |  |  |  |  e
+        f
+        "###);
+    }
+
+    #[test]
+    fn it_iterates_over_arrays_of_jq() {
+        let mut visited = Vec::new();
+        let visitor = TestVisitor::new(&mut visited);
+        let selection = Selection::parse_jq("[{d: [{ e }], f: [.f]}]").unwrap();
+
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
+        assert_snapshot!(print_visited(visited), @r###"
+        d
+        |  e
+        f
+        "###);
+    }
+
+    #[test]
+    fn it_handles_multi_part_filters() {
+        let mut visited = Vec::new();
+        let visitor = TestVisitor::new(&mut visited);
+        let selection = Selection::parse_jq("[.[] | {d: [.e[] | { e }], f: [.f]}]").unwrap();
+
+        visitor.walk(selection.group().clone().unwrap()).unwrap();
+        assert_snapshot!(print_visited(visited), @r###"
+        d
+        |  e
         f
         "###);
     }
