@@ -4,6 +4,7 @@ use std::sync::Arc;
 use apollo_compiler::collections::IndexMap;
 use apollo_compiler::executable::SelectionSet;
 use itertools::Itertools;
+use jaq_interpret::ParseCtx;
 use jaq_syn::filter::BinaryOp;
 use jaq_syn::filter::Filter;
 use jaq_syn::filter::KeyVal;
@@ -33,6 +34,7 @@ pub enum Selection {
     Jq {
         source: Arc<str>,
         parsed: Main,
+        compiled: jaq_interpret::Filter,
     },
 }
 
@@ -82,6 +84,16 @@ impl Selection {
             .map(|module| module.conv(selection_str))
             .map(|main| Self::Jq {
                 source: selection_str.into(),
+                // TODO: make execution happen in router, dep not needed in apollo-federation
+                // TODO: use a struct for the fixed set of vars, not a map (since key format differs)
+                compiled: {
+                    let mut defs = ParseCtx::new(vec![
+                        "args".to_string(),
+                        "this".to_string(),
+                        "config".to_string(),
+                    ]);
+                    defs.compile(main.clone())
+                },
                 parsed: main,
             })
     }
@@ -98,7 +110,7 @@ impl Selection {
                 let (res, errors) = transformed_selection.apply_with_vars(json, vars);
                 (res, errors.into_iter().map(TransformError::Json).collect())
             }
-            Selection::Jq { parsed, .. } => jq::execute(&json, vars, parsed),
+            Selection::Jq { compiled, .. } => jq::execute(&json, vars, compiled),
         }
     }
 }

@@ -3,11 +3,10 @@ use std::rc::Rc;
 use apollo_compiler::collections::IndexMap;
 use itertools::Itertools;
 use jaq_interpret::Ctx;
+use jaq_interpret::Filter;
 use jaq_interpret::FilterT;
-use jaq_interpret::ParseCtx;
 use jaq_interpret::RcIter;
 use jaq_interpret::Val;
-use jaq_syn::Main;
 use serde_json_bytes::Value;
 
 use crate::sources::connect::TransformError;
@@ -15,16 +14,8 @@ use crate::sources::connect::TransformError;
 pub(super) fn execute(
     json: &Value,
     vars: &IndexMap<String, Value>,
-    parsed: &Main,
+    filter: &Filter,
 ) -> (Option<Value>, Vec<TransformError>) {
-    // TODO: make execution happen in router, dep not needed in apollo-federation
-    // TODO: use a struct for the fixed set of vars, not a map (since key format differs)
-    let var_names = vars
-        .keys()
-        .map(|key_with_dollar| key_with_dollar.trim_start_matches('$').to_string())
-        .collect_vec();
-    let mut defs = ParseCtx::new(var_names.clone());
-    let f = defs.compile(parsed.clone());
     // TODO: stop needing to convert to/from serde_json_bytes
     let json = val_from_serde_json_bytes(json.clone());
 
@@ -34,7 +25,7 @@ pub(super) fn execute(
         .values()
         .map(|value| val_from_serde_json_bytes(value.clone()))
         .collect_vec();
-    let out = f.run((Ctx::new(var_values, &inputs), json));
+    let out = filter.run((Ctx::new(var_values, &inputs), json));
     let mut errs = Vec::new();
     let mut output = None;
     for res in out {
@@ -67,10 +58,11 @@ mod test_execute {
         vars.insert("args".to_string(), Value::String(ByteString::from("hello")));
         vars.insert("this".to_string(), json!({"something": {"nested": "here"}}));
 
-        let tokens = Lexer::new(jq).lex().unwrap();
-        let mut parser = Parser::new(&tokens);
-        let main = parser.module(|parser| parser.term()).unwrap().conv(jq);
-        let (res, errs) = execute(&json, &vars, &main);
+        let selection = match Selection::parse_jq(jq).unwrap() {
+            Selection::Jq { compiled, .. } => compiled,
+            _ => panic!("Expected Jq selection"),
+        };
+        let (res, errs) = execute(&json, &vars, &selection);
 
         assert_eq!(errs, Vec::new());
         assert_eq!(res, Some(json!({"greeting": "hello", "data": "here"})));
@@ -98,13 +90,13 @@ mod test_execute {
           },
         }]);
         let selection = Selection::parse(jq).unwrap();
-        let Selection::Jq { parsed, .. } = selection else {
+        let Selection::Jq { compiled, .. } = selection else {
             panic!("Expected Jq selection")
         };
         let mut vars = IndexMap::with_hasher(Default::default());
         vars.insert("args".to_string(), json!({"owner": "blah"}));
 
-        let (res, errs) = execute(&json, &vars, &parsed);
+        let (res, errs) = execute(&json, &vars, &compiled);
 
         assert_eq!(errs, Vec::new());
         assert_eq!(
