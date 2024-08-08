@@ -7,6 +7,8 @@ use jaq_interpret::Filter;
 use jaq_interpret::FilterT;
 use jaq_interpret::RcIter;
 use jaq_interpret::Val;
+use serde_json::Number;
+use serde_json_bytes::ByteString;
 use serde_json_bytes::Value;
 
 use crate::sources::connect::TransformError;
@@ -141,5 +143,35 @@ fn val_from_serde_json_bytes(value: Value) -> Val {
                 })
                 .collect(),
         )),
+    }
+}
+
+fn serde_json_bytes_from_val(val: Val) -> Value {
+    match val {
+        Val::Null => Value::Null,
+        Val::Bool(inner) => Value::Bool(inner),
+        Val::Int(inner) => Value::Number(inner.into()),
+        // TODO: can this unwrap panic?
+        Val::Float(inner) => Value::Number(Number::from_f64(inner).unwrap()),
+        Val::Num(inner) | Val::Str(inner) => Value::String(ByteString::from(inner.as_str())),
+        Val::Arr(inner) => Value::Array(
+            inner
+                .iter()
+                .cloned()
+                .map(serde_json_bytes_from_val)
+                .collect(),
+        ),
+        Val::Obj(inner) => Value::Object(
+            inner
+                .as_ref()
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        ByteString::from(k.as_str()),
+                        serde_json_bytes_from_val(v.clone()),
+                    )
+                })
+                .collect(),
+        ),
     }
 }
