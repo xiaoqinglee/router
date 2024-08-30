@@ -905,6 +905,8 @@ impl SubgraphOperationCompression {
         subgraph_schema: &ValidFederationSchema,
         operation: Operation,
     ) -> Result<Operation, FederationError> {
+        let mut operation = operation;
+        operation.flatten_unnecessary_fragments(subgraph_schema)?;
         match self {
             Self::ReuseFragments(fragments) => {
                 let rebased = fragments.for_subgraph(Arc::clone(subgraph_name), subgraph_schema);

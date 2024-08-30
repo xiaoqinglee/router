@@ -63,6 +63,7 @@ use crate::operation::FragmentSpread;
 use crate::operation::FragmentSpreadData;
 use crate::operation::SelectionValue;
 use crate::schema::position::CompositeTypeDefinitionPosition;
+use crate::schema::ValidFederationSchema;
 
 #[derive(Debug)]
 struct ReuseContext<'a> {
@@ -1567,6 +1568,14 @@ impl Operation {
         let mut generator = FragmentGenerator::default();
         generator.visit_selection_set(&mut self.selection_set)?;
         self.named_fragments = generator.into_inner();
+        Ok(())
+    }
+
+    pub(crate) fn flatten_unnecessary_fragments(&mut self, schema: &ValidFederationSchema) -> Result<(), FederationError> {
+        self.selection_set = self.selection_set.flatten_unnecessary_fragments(
+            &self.selection_set.type_position,
+            &NamedFragments::default(), schema
+        )?;
         Ok(())
     }
 
