@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fred::interfaces::EventInterface;
+use fred::interfaces::LuaInterface;
 #[cfg(test)]
 use fred::mocks::Mocks;
 use fred::prelude::ClientLike;
@@ -585,6 +586,29 @@ impl RedisCacheStorage {
         }
 
         Some(total)
+    }
+
+    pub(crate) async fn unlink(&self, prefix: &str) -> Option<u32> {
+        let lua = r#"
+            local cursor = 0
+            local calls = 0
+            local dels = 0
+            repeat
+                local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1])
+                calls = calls + 1
+                for _,key in ipairs(result[2]) do
+                    redis.call('UNLINK', key)
+                    dels = dels + 1
+                end
+                cursor = tonumber(result[1])
+            until cursor == 0
+            return "Calls " .. calls .. " Dels " .. dels
+        "#;
+        let v = fred::types::RedisValue::String(prefix.into());
+        // let result = self.inner.eval::<(fred::types::RedisValue, fred::types::RedisValue), &str, Option<fred::types::RedisKey>, Vec<fred::types::RedisValue>>(lua, None, vec![v]).await;
+        let result = self.inner.eval::<fred::types::RedisValue, &str, Option<fred::types::RedisKey>, Vec<fred::types::RedisValue>>(lua, None, vec![v]).await;
+        tracing::info!("got back something: {:?}", result);
+        None
     }
 
     pub(crate) fn scan(

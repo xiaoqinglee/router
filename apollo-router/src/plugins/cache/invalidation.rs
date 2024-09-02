@@ -141,6 +141,9 @@ async fn handle_request(
     request: &InvalidationRequest,
 ) -> Result<u64, InvalidationError> {
     let key_prefix = request.key_prefix();
+    storage.unlink(&key_prefix).await;
+    Ok(0)
+    /*
     let subgraph = request.subgraph_name();
     tracing::debug!(
         "got invalidation request: {request:?}, will scan for: {}",
@@ -198,6 +201,7 @@ async fn handle_request(
         Some(err) => Err(err.into()),
         None => Ok(count),
     }
+    */
 }
 
 async fn handle_request_batch(
