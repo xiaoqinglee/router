@@ -588,7 +588,7 @@ impl RedisCacheStorage {
         Some(total)
     }
 
-    pub(crate) async fn unlink(&self, prefix: &str) -> Option<u32> {
+    pub(crate) async fn unlink(&self, prefix: &str) -> Result<fred::types::RedisValue, RedisError> {
         tracing::info!("unlining prefix: {prefix}");
         let lua = r#"
             local cursor = 0
@@ -609,8 +609,7 @@ impl RedisCacheStorage {
         let v = fred::types::RedisValue::String(prefix.into());
         let result = self.inner.eval::<fred::types::RedisValue, &str, Option<fred::types::RedisKey>, Vec<fred::types::RedisValue>>(lua, None, vec![v]).await;
         tracing::info!("got back something: {:?}", result);
-        dbg!(&result);
-        None
+        result
     }
 
     pub(crate) fn scan(

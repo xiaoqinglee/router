@@ -141,8 +141,10 @@ async fn handle_request(
     request: &InvalidationRequest,
 ) -> Result<u64, InvalidationError> {
     let key_prefix = request.key_prefix();
-    storage.unlink(&key_prefix).await;
-    Ok(0)
+    let result = storage.unlink(&key_prefix).await;
+    result
+        .map(|v| v.as_u64().unwrap_or(0))
+        .map_err(|e| e.into())
     /*
     let subgraph = request.subgraph_name();
     tracing::debug!(
