@@ -598,7 +598,7 @@ impl RedisCacheStorage {
                 local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1])
                 -- calls = calls + 1
                 for _,key in ipairs(result[2]) do
-                    redis.call('UNLINK', key)
+                    redis.call('DEL', key)
                     dels = dels + 1
                 end
                 cursor = tonumber(result[1])
