@@ -589,7 +589,7 @@ impl RedisCacheStorage {
     }
 
     pub(crate) async fn unlink(&self, prefix: &str) -> Result<fred::types::RedisValue, RedisError> {
-        tracing::info!("unlining prefix: {prefix}");
+        tracing::info!("unlinking prefix: {prefix}");
         let lua = r#"
             local cursor = 0
             -- local calls = 0
