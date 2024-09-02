@@ -589,6 +589,7 @@ impl RedisCacheStorage {
     }
 
     pub(crate) async fn unlink(&self, prefix: &str) -> Option<u32> {
+        tracing::info!("unlining prefix: {prefix}");
         let lua = r#"
             local cursor = 0
             -- local calls = 0
