@@ -228,6 +228,15 @@ where
         let mut last_id = None;
         let mut endpoints = uplink_config.endpoints.unwrap_or_default();
         loop {
+            println!("emitting temp metrics");
+            u64_counter!(
+                "apollo.router.connectors",
+                "Number of connectors in supergraph the for a specific spec version",
+                2,
+                "spec.version" = "some.string.1.0",
+                "spec.subgraphs" = 3 as i64
+            );
+
             let variables = UplinkRequest {
                 graph_ref: uplink_config.apollo_graph_ref.to_string(),
                 api_key: uplink_config.apollo_key.to_string(),
