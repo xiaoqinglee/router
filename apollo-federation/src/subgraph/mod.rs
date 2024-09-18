@@ -331,7 +331,7 @@ impl std::fmt::Debug for ValidSubgraph {
 impl From<ValidFederationSubgraph> for ValidSubgraph {
     fn from(value: ValidFederationSubgraph) -> Self {
         Self {
-            name: value.name,
+            name: value.name.to_string(),
             url: value.url,
             schema: value.schema.schema().clone(),
         }

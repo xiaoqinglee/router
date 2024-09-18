@@ -1,52 +1,60 @@
-use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
+
+use apollo_compiler::collections::IndexMap;
 
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
 use crate::schema::FederationSchema;
 use crate::schema::ValidFederationSchema;
 
+use super::SubgraphName;
+
 pub(super) struct FederationSubgraph {
-    pub(super) name: String,
+    pub(super) name: SubgraphName,
     pub(super) url: String,
     pub(super) schema: FederationSchema,
 }
 
 pub(super) struct FederationSubgraphs {
-    pub(super) subgraphs: BTreeMap<String, FederationSubgraph>,
+    /// The map is keyed by the subgraph name as a string,
+    /// not the SubgraphName type (which would be keyed by pointer identity),
+    /// so we can use get(&str) and so you can't add duplicate names with
+    /// different pointer identity when building a map manually.
+    pub(super) subgraphs: IndexMap<Arc<str>, FederationSubgraph>,
 }
 
 impl FederationSubgraphs {
     pub(super) fn new() -> Self {
         FederationSubgraphs {
-            subgraphs: BTreeMap::new(),
+            subgraphs: IndexMap::default(),
         }
     }
 
     pub(super) fn add(&mut self, subgraph: FederationSubgraph) -> Result<(), FederationError> {
-        if self.subgraphs.contains_key(&subgraph.name) {
+        let raw_name = subgraph.name.to_cloned_arc();
+        if self.subgraphs.contains_key(&raw_name) {
             return Err(SingleFederationError::InvalidFederationSupergraph {
                 message: format!("A subgraph named \"{}\" already exists", subgraph.name),
             }
             .into());
         }
-        self.subgraphs.insert(subgraph.name.clone(), subgraph);
+        self.subgraphs.insert(raw_name, subgraph);
         Ok(())
     }
 
-    fn get(&self, name: &str) -> Option<&FederationSubgraph> {
-        self.subgraphs.get(name)
+    fn get(&self, name: impl AsRef<str>) -> Option<&FederationSubgraph> {
+        self.subgraphs.get(name.as_ref())
     }
 
-    pub(super) fn get_mut(&mut self, name: &str) -> Option<&mut FederationSubgraph> {
-        self.subgraphs.get_mut(name)
+    pub(super) fn get_mut(&mut self, name: impl AsRef<str>) -> Option<&mut FederationSubgraph> {
+        self.subgraphs.get_mut(name.as_ref())
     }
 }
 
 impl IntoIterator for FederationSubgraphs {
-    type Item = <BTreeMap<String, FederationSubgraph> as IntoIterator>::Item;
-    type IntoIter = <BTreeMap<String, FederationSubgraph> as IntoIterator>::IntoIter;
+    type Item = <IndexMap<Arc<str>, FederationSubgraph> as IntoIterator>::Item;
+    type IntoIter = <IndexMap<Arc<str>, FederationSubgraph> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.subgraphs.into_iter()
@@ -57,13 +65,35 @@ impl IntoIterator for FederationSubgraphs {
 // TODO(@goto-bus-stop): should this exist separately from the `crate::subgraph::Subgraph` type?
 #[derive(Debug, Clone)]
 pub struct ValidFederationSubgraph {
-    pub name: String,
+    pub name: SubgraphName,
     pub url: String,
     pub schema: ValidFederationSchema,
 }
 
+impl ValidFederationSubgraph {
+    /// Internal constructor. In the context of a query planner or composition,
+    /// this should be called at most once per subgraph name.
+    /// XXX(@goto-bus-stop): maybe this should actually be the API signature for
+    /// ValidFederationSubgraphs::add, as we can check the invariant there^
+    pub(crate) fn new(
+        name: &str,
+        url: &str,
+        schema: ValidFederationSchema,
+    ) -> Self {
+        Self {
+            name: SubgraphName::new(name),
+            url: url.to_string(),
+            schema,
+        }
+    }
+}
+
 pub struct ValidFederationSubgraphs {
-    pub(super) subgraphs: BTreeMap<Arc<str>, ValidFederationSubgraph>,
+    /// The map is keyed by the subgraph name as a string,
+    /// not the SubgraphName type (which would be keyed by pointer identity),
+    /// so we can use get(&str) and so you can't add duplicate names with
+    /// different pointer identity when building a map manually.
+    pub(super) subgraphs: IndexMap<Arc<str>, ValidFederationSubgraph>,
 }
 
 impl fmt::Debug for ValidFederationSubgraphs {
@@ -76,30 +106,30 @@ impl fmt::Debug for ValidFederationSubgraphs {
 impl ValidFederationSubgraphs {
     pub(crate) fn new() -> Self {
         ValidFederationSubgraphs {
-            subgraphs: BTreeMap::new(),
+            subgraphs: IndexMap::default(),
         }
     }
 
     pub(crate) fn add(&mut self, subgraph: ValidFederationSubgraph) -> Result<(), FederationError> {
-        if self.subgraphs.contains_key(subgraph.name.as_str()) {
+        let raw_name = subgraph.name.to_cloned_arc();
+        if self.subgraphs.contains_key(&raw_name) {
             return Err(SingleFederationError::InvalidFederationSupergraph {
                 message: format!("A subgraph named \"{}\" already exists", subgraph.name),
             }
             .into());
         }
-        self.subgraphs
-            .insert(subgraph.name.as_str().into(), subgraph);
+        self.subgraphs.insert(raw_name, subgraph);
         Ok(())
     }
 
-    pub fn get(&self, name: &str) -> Option<&ValidFederationSubgraph> {
-        self.subgraphs.get(name)
+    pub fn get(&self, name: impl AsRef<str>) -> Option<&ValidFederationSubgraph> {
+        self.subgraphs.get(name.as_ref())
     }
 }
 
 impl IntoIterator for ValidFederationSubgraphs {
-    type Item = <BTreeMap<Arc<str>, ValidFederationSubgraph> as IntoIterator>::Item;
-    type IntoIter = <BTreeMap<Arc<str>, ValidFederationSubgraph> as IntoIterator>::IntoIter;
+    type Item = <IndexMap<Arc<str>, ValidFederationSubgraph> as IntoIterator>::Item;
+    type IntoIter = <IndexMap<Arc<str>, ValidFederationSubgraph> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.subgraphs.into_iter()

@@ -5,6 +5,7 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::ops::Not;
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use apollo_compiler::ast::Argument;
 use apollo_compiler::ast::Directive;
@@ -52,6 +53,7 @@ use crate::link::federation_spec_definition::get_federation_spec_definition_from
 use crate::link::federation_spec_definition::FederationSpecDefinition;
 use crate::link::federation_spec_definition::FEDERATION_VERSIONS;
 use crate::link::join_spec_definition::FieldDirectiveArguments;
+use crate::link::join_spec_definition::GraphDirectiveArguments;
 use crate::link::join_spec_definition::JoinSpecDefinition;
 use crate::link::join_spec_definition::TypeDirectiveArguments;
 use crate::link::spec::Identity;
@@ -82,6 +84,62 @@ use crate::schema::type_and_directive_specification::TypeAndDirectiveSpecificati
 use crate::schema::type_and_directive_specification::UnionTypeSpecification;
 use crate::schema::FederationSchema;
 use crate::utils::FallibleIterator;
+
+/// A subgraph name.
+///
+/// Subgraph names can only be created during subgraph extraction.
+#[derive(Clone)]
+pub struct SubgraphName(Arc<str>);
+
+type GraphQLNameToSubgraphName = IndexMap<Name, SubgraphName>;
+type GraphQLNameToFederationSpec = IndexMap<Name, &'static FederationSpecDefinition>;
+
+impl SubgraphName {
+    fn new(s: &str) -> Self {
+        Self(s.into())
+    }
+
+    fn root() -> Self {
+        static ROOT_NAME: OnceLock<Arc<str>> = OnceLock::new();
+        Self(ROOT_NAME.get_or_init(|| Arc::from("_")).clone())
+    }
+
+    pub(super) fn to_cloned_arc(&self) -> Arc<str> {
+        self.0.clone()
+    }
+}
+
+impl PartialEq for SubgraphName {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for SubgraphName {}
+
+impl std::hash::Hash for SubgraphName {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.as_ptr().hash(state)
+    }
+}
+
+impl std::fmt::Display for SubgraphName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::fmt::Debug for SubgraphName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SubgraphName({} @ {:?})", self.0, self.0.as_ptr())
+    }
+}
+
+impl AsRef<str> for SubgraphName {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
 
 /// Assumes the given schema has been validated.
 ///
@@ -183,8 +241,8 @@ pub(crate) fn extract_subgraphs_from_supergraph(
 
 type CollectEmptySubgraphsOk = (
     FederationSubgraphs,
-    IndexMap<Name, &'static FederationSpecDefinition>,
-    IndexMap<Name, Arc<str>>,
+    GraphQLNameToFederationSpec,
+    GraphQLNameToSubgraphName,
 );
 fn collect_empty_subgraphs(
     supergraph_schema: &FederationSchema,
@@ -194,8 +252,8 @@ fn collect_empty_subgraphs(
     let graph_directive_definition =
         join_spec_definition.graph_directive_definition(supergraph_schema)?;
     let graph_enum = join_spec_definition.graph_enum_definition(supergraph_schema)?;
-    let mut federation_spec_definitions = IndexMap::default();
-    let mut graph_enum_value_name_to_subgraph_name = IndexMap::default();
+    let mut federation_spec_definitions = GraphQLNameToFederationSpec::default();
+    let mut graph_enum_value_name_to_subgraph_name = GraphQLNameToSubgraphName::default();
     for (enum_value_name, enum_value_definition) in graph_enum.values.iter() {
         let graph_application = enum_value_definition
             .directives
@@ -206,10 +264,14 @@ fn collect_empty_subgraphs(
                     enum_value_name
                 ),
             })?;
-        let graph_arguments = join_spec_definition.graph_directive_arguments(graph_application)?;
+        let GraphDirectiveArguments {
+            name: subgraph_name,
+            url: subgraph_url,
+        } = join_spec_definition.graph_directive_arguments(graph_application)?;
+        let subgraph_name = SubgraphName::new(subgraph_name);
         let subgraph = FederationSubgraph {
-            name: graph_arguments.name.to_owned(),
-            url: graph_arguments.url.to_owned(),
+            name: subgraph_name.clone(),
+            url: subgraph_url.to_string(),
             schema: new_empty_fed_2_subgraph_schema()?,
         };
         let federation_link = &subgraph
@@ -227,8 +289,7 @@ fn collect_empty_subgraphs(
                     .to_owned(),
             })?;
         subgraphs.add(subgraph)?;
-        graph_enum_value_name_to_subgraph_name
-            .insert(enum_value_name.clone(), graph_arguments.name.into());
+        graph_enum_value_name_to_subgraph_name.insert(enum_value_name.clone(), subgraph_name);
         federation_spec_definitions.insert(enum_value_name.clone(), federation_spec_definition);
     }
     Ok((
@@ -255,8 +316,8 @@ struct TypeInfos {
 fn extract_subgraphs_from_fed_2_supergraph(
     supergraph_schema: &FederationSchema,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
-    federation_spec_definitions: &IndexMap<Name, &'static FederationSpecDefinition>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
+    federation_spec_definitions: &GraphQLNameToFederationSpec,
     join_spec_definition: &'static JoinSpecDefinition,
     filtered_types: &Vec<TypeDefinitionPosition>,
 ) -> Result<(), FederationError> {
@@ -391,8 +452,8 @@ fn extract_subgraphs_from_fed_2_supergraph(
 fn add_all_empty_subgraph_types(
     supergraph_schema: &FederationSchema,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
-    federation_spec_definitions: &IndexMap<Name, &'static FederationSpecDefinition>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
+    federation_spec_definitions: &GraphQLNameToFederationSpec,
     join_spec_definition: &'static JoinSpecDefinition,
     filtered_types: &Vec<TypeDefinitionPosition>,
     original_directive_names: &IndexMap<Name, Name>,
@@ -485,8 +546,8 @@ fn add_empty_type(
     type_definition_position: TypeDefinitionPosition,
     type_directive_applications: &Vec<TypeDirectiveArguments>,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
-    federation_spec_definitions: &IndexMap<Name, &'static FederationSpecDefinition>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
+    federation_spec_definitions: &GraphQLNameToFederationSpec,
 ) -> Result<TypeInfo, FederationError> {
     // In fed2, we always mark all types with `@join__type` but making sure.
     if type_directive_applications.is_empty() {
@@ -693,8 +754,8 @@ fn add_empty_type(
 fn extract_object_type_content(
     supergraph_schema: &FederationSchema,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
-    federation_spec_definitions: &IndexMap<Name, &'static FederationSpecDefinition>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
+    federation_spec_definitions: &GraphQLNameToFederationSpec,
     join_spec_definition: &JoinSpecDefinition,
     info: &[TypeInfo],
     original_directive_names: &IndexMap<Name, Name>,
@@ -869,8 +930,8 @@ fn extract_object_type_content(
 fn extract_interface_type_content(
     supergraph_schema: &FederationSchema,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
-    federation_spec_definitions: &IndexMap<Name, &'static FederationSpecDefinition>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
+    federation_spec_definitions: &GraphQLNameToFederationSpec,
     join_spec_definition: &JoinSpecDefinition,
     info: &[TypeInfo],
     original_directive_names: &IndexMap<Name, Name>,
@@ -1065,7 +1126,7 @@ fn extract_interface_type_content(
 fn extract_union_type_content(
     supergraph_schema: &FederationSchema,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
     join_spec_definition: &JoinSpecDefinition,
     info: &[TypeInfo],
 ) -> Result<(), FederationError> {
@@ -1157,8 +1218,8 @@ fn extract_union_type_content(
 fn extract_enum_type_content(
     supergraph_schema: &FederationSchema,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
-    federation_spec_definitions: &IndexMap<Name, &'static FederationSpecDefinition>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
+    federation_spec_definitions: &GraphQLNameToFederationSpec,
     join_spec_definition: &JoinSpecDefinition,
     info: &[TypeInfo],
     original_directive_names: &IndexMap<Name, Name>,
@@ -1266,8 +1327,8 @@ fn extract_enum_type_content(
 fn extract_input_object_type_content(
     supergraph_schema: &FederationSchema,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
-    federation_spec_definitions: &IndexMap<Name, &'static FederationSpecDefinition>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
+    federation_spec_definitions: &GraphQLNameToFederationSpec,
     join_spec_definition: &JoinSpecDefinition,
     info: &[TypeInfo],
     original_directive_names: &IndexMap<Name, Name>,
@@ -1539,7 +1600,7 @@ fn decode_type(type_: &str) -> Result<Type, FederationError> {
 
 fn get_subgraph<'subgraph>(
     subgraphs: &'subgraph mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
     graph_enum_value: &Name,
 ) -> Result<&'subgraph mut FederationSubgraph, FederationError> {
     let subgraph_name = graph_enum_value_name_to_subgraph_name
@@ -2129,7 +2190,7 @@ static JOIN_DIRECTIVE: &str = "join__directive";
 fn extract_join_directives(
     supergraph_schema: &FederationSchema,
     subgraphs: &mut FederationSubgraphs,
-    graph_enum_value_name_to_subgraph_name: &IndexMap<Name, Arc<str>>,
+    graph_enum_value_name_to_subgraph_name: &GraphQLNameToSubgraphName,
 ) -> Result<(), FederationError> {
     let join_directives = match supergraph_schema
         .referencers()

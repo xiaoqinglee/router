@@ -103,11 +103,11 @@ pub fn merge_subgraphs(subgraphs: Vec<&ValidSubgraph>) -> Result<MergeSuccess, M
     let mut merger = Merger::new();
     let mut federation_subgraphs = ValidFederationSubgraphs::new();
     for subgraph in subgraphs {
-        federation_subgraphs.add(ValidFederationSubgraph {
-            name: subgraph.name.clone(),
-            url: subgraph.url.clone(),
-            schema: ValidFederationSchema::new(subgraph.schema.clone())?,
-        })?;
+        federation_subgraphs.add(ValidFederationSubgraph::new(
+            &subgraph.name,
+            &subgraph.url,
+            ValidFederationSchema::new(subgraph.schema.clone())?,
+        ))?;
     }
     merger.merge(federation_subgraphs)
 }
@@ -133,12 +133,12 @@ impl Merger {
             .into_iter()
             .map(|(_, subgraph)| subgraph)
             .collect_vec();
-        subgraphs.sort_by(|s1, s2| s1.name.cmp(&s2.name));
+        subgraphs.sort_by(|s1, s2| s1.name.as_ref().cmp(s2.name.as_ref()));
         let mut subgraphs_and_enum_values: Vec<(&ValidFederationSubgraph, Name)> = Vec::new();
         for subgraph in &subgraphs {
             // TODO: Implement JS codebase's name transform (which always generates a valid GraphQL
             // name and avoids collisions).
-            if let Ok(subgraph_name) = Name::new(&subgraph.name.to_uppercase()) {
+            if let Ok(subgraph_name) = Name::new(&subgraph.name.as_ref().to_uppercase()) {
                 subgraphs_and_enum_values.push((subgraph, subgraph_name));
             } else {
                 self.errors.push(String::from(
@@ -1513,7 +1513,7 @@ fn join_graph_enum_type(
             arguments: vec![
                 (Node::new(Argument {
                     name: name!("name"),
-                    value: s.name.as_str().into(),
+                    value: s.name.as_ref().into(),
                 })),
                 (Node::new(Argument {
                     name: name!("url"),
@@ -1621,46 +1621,46 @@ mod tests {
 
         let mut subgraphs = ValidFederationSubgraphs::new();
         subgraphs
-            .add(ValidFederationSubgraph {
-                name: "connector_Query_users_0".to_string(),
-                url: "".to_string(),
-                schema: ValidFederationSchema::new(
+            .add(ValidFederationSubgraph::new(
+                "connector_Query_users_0",
+                "",
+                ValidFederationSchema::new(
                     Schema::parse_and_validate(one_sdl, "./connector_Query_users_0.graphql")
                         .unwrap(),
                 )
                 .unwrap(),
-            })
+            ))
             .unwrap();
         subgraphs
-            .add(ValidFederationSubgraph {
-                name: "connector_Query_user_0".to_string(),
-                url: "".to_string(),
-                schema: ValidFederationSchema::new(
+            .add(ValidFederationSubgraph ::new(
+                "connector_Query_user_0",
+                "",
+                ValidFederationSchema::new(
                     Schema::parse_and_validate(two_sdl, "./connector_Query_user_0.graphql")
                         .unwrap(),
                 )
                 .unwrap(),
-            })
+            ))
             .unwrap();
         subgraphs
-            .add(ValidFederationSubgraph {
-                name: "connector_User_d_1".to_string(),
-                url: "".to_string(),
-                schema: ValidFederationSchema::new(
+            .add(ValidFederationSubgraph ::new(
+                "connector_User_d_1",
+                "",
+                ValidFederationSchema::new(
                     Schema::parse_and_validate(three_sdl, "./connector_User_d_1.graphql").unwrap(),
                 )
                 .unwrap(),
-            })
+            ))
             .unwrap();
         subgraphs
-            .add(ValidFederationSubgraph {
-                name: "graphql".to_string(),
-                url: "".to_string(),
-                schema: ValidFederationSchema::new(
+            .add(ValidFederationSubgraph ::new(
+                "graphql",
+                "",
+                ValidFederationSchema::new(
                     Schema::parse_and_validate(graphql_sdl, "./graphql.graphql").unwrap(),
                 )
                 .unwrap(),
-            })
+            ))
             .unwrap();
 
         let result = merge_federation_subgraphs(subgraphs).unwrap();
@@ -1679,24 +1679,24 @@ mod tests {
 
         let mut subgraphs = ValidFederationSubgraphs::new();
         subgraphs
-            .add(ValidFederationSubgraph {
-                name: "basic_1".to_string(),
-                url: "".to_string(),
-                schema: ValidFederationSchema::new(
+            .add(ValidFederationSubgraph::new(
+                "basic_1",
+                "",
+                ValidFederationSchema::new(
                     Schema::parse_and_validate(one_sdl, "./basic_1.graphql").unwrap(),
                 )
                 .unwrap(),
-            })
+            ))
             .unwrap();
         subgraphs
-            .add(ValidFederationSubgraph {
-                name: "basic_2".to_string(),
-                url: "".to_string(),
-                schema: ValidFederationSchema::new(
+            .add(ValidFederationSubgraph::new(
+                "basic_2",
+                "",
+                ValidFederationSchema::new(
                     Schema::parse_and_validate(two_sdl, "./basic_2.graphql").unwrap(),
                 )
                 .unwrap(),
-            })
+            ))
             .unwrap();
 
         let result = merge_federation_subgraphs(subgraphs).unwrap();
@@ -1715,24 +1715,24 @@ mod tests {
 
         let mut subgraphs = ValidFederationSubgraphs::new();
         subgraphs
-            .add(ValidFederationSubgraph {
-                name: "inaccessible".to_string(),
-                url: "".to_string(),
-                schema: ValidFederationSchema::new(
+            .add(ValidFederationSubgraph::new(
+                "inaccessible",
+                "",
+                ValidFederationSchema::new(
                     Schema::parse_and_validate(one_sdl, "./inaccessible.graphql").unwrap(),
                 )
                 .unwrap(),
-            })
+            ))
             .unwrap();
         subgraphs
-            .add(ValidFederationSubgraph {
-                name: "inaccessible_2".to_string(),
-                url: "".to_string(),
-                schema: ValidFederationSchema::new(
+            .add(ValidFederationSubgraph::new(
+                "inaccessible_2",
+                "",
+                ValidFederationSchema::new(
                     Schema::parse_and_validate(two_sdl, "./inaccessible_2.graphql").unwrap(),
                 )
                 .unwrap(),
-            })
+            ))
             .unwrap();
 
         let result = merge_federation_subgraphs(subgraphs).unwrap();
