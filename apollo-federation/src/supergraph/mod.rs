@@ -96,14 +96,15 @@ type GraphQLNameToSubgraphName = IndexMap<Name, SubgraphName>;
 type GraphQLNameToFederationSpec = IndexMap<Name, &'static FederationSpecDefinition>;
 
 impl SubgraphName {
-    fn new(s: &str) -> Self {
-        Self(s.into())
-    }
-
-    /// The user of this function is responsible for ensuring that only one subgraph name instance
-    /// is created for a given value.
-    #[cfg(test)]
-    pub(crate) fn new_test(s: &str) -> Self {
+    /// Because subgraph names are compared by pointer address, all instances of SubgraphName for a
+    /// given value within the same planner or composition run must point to the same underlying
+    /// string. This invariant is upheld if you only clone around subgraph names created by
+    /// subgraph extraction or if you use the `FederationSubgraphs` or `ValidFederationSubgraphs`
+    /// map types.
+    ///
+    /// This escape hatch is exposed for tests and for the CLI. Otherwise, think very carefully if
+    /// you actually need this!
+    pub(crate) fn new_unchecked(s: &str) -> Self {
         Self(s.into())
     }
 
@@ -281,7 +282,7 @@ fn collect_empty_subgraphs(
             name: subgraph_name,
             url: subgraph_url,
         } = join_spec_definition.graph_directive_arguments(graph_application)?;
-        let subgraph_name = SubgraphName::new(subgraph_name);
+        let subgraph_name = SubgraphName::new_unchecked(subgraph_name);
         let subgraph = FederationSubgraph {
             name: subgraph_name.clone(),
             url: subgraph_url.to_string(),

@@ -30,13 +30,17 @@ use crate::schema::ValidFederationSchema;
 use crate::supergraph::SubgraphName;
 use crate::utils::FallibleIterator;
 
-pub mod build_query_graph;
+mod build_query_graph;
 pub(crate) mod condition_resolver;
 pub(crate) mod graph_path;
 pub mod output;
 pub(crate) mod path_tree;
 
 pub use build_query_graph::build_federated_query_graph;
+
+pub fn build_query_graph(source_name: &str, schema: ValidFederationSchema) -> Result<QueryGraph,FederationError> {
+    build_query_graph::build_query_graph(SubgraphName::new_unchecked(source_name), schema)
+}
 
 use crate::query_graph::condition_resolver::ConditionResolution;
 use crate::query_graph::condition_resolver::ConditionResolver;

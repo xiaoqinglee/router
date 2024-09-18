@@ -3873,7 +3873,7 @@ mod tests {
         "#;
         let schema = Schema::parse_and_validate(src, "./").unwrap();
         let schema = ValidFederationSchema::new(schema).unwrap();
-        let name = SubgraphName::new_test("S1");
+        let name = SubgraphName::new_unchecked("S1");
         let graph = build_query_graph(name, schema.clone()).unwrap();
         let path = OpGraphPath::new(Arc::new(graph), NodeIndex::new(0)).unwrap();
         // NOTE: in general GraphPath would be used against a federated supergraph which would have

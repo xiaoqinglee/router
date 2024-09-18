@@ -227,7 +227,7 @@ fn cmd_query_graph(file_paths: &[PathBuf]) -> Result<(), FederationError> {
         "supergraph"
     };
     let query_graph =
-        query_graph::build_query_graph::build_query_graph(name.into(), supergraph.schema)?;
+        query_graph::build_query_graph(name.into(), supergraph.schema)?;
     println!("{}", query_graph::output::to_dot(&query_graph));
     Ok(())
 }
@@ -277,8 +277,8 @@ fn cmd_extract(file_path: &Path, dest: Option<&PathBuf>) -> Result<(), Federatio
         fs::create_dir_all(dest).map_err(|_| SingleFederationError::Internal {
             message: "Error: directory creation failed".into(),
         })?;
-        for (name, subgraph) in subgraphs {
-            let subgraph_path = dest.join(format!("{}.graphql", name));
+        for subgraph in subgraphs {
+            let subgraph_path = dest.join(format!("{}.graphql", subgraph.name));
             fs::write(subgraph_path, subgraph.schema.schema().to_string()).map_err(|_| {
                 SingleFederationError::Internal {
                     message: "Error: file output failed".into(),
@@ -286,8 +286,8 @@ fn cmd_extract(file_path: &Path, dest: Option<&PathBuf>) -> Result<(), Federatio
             })?;
         }
     } else {
-        for (name, subgraph) in subgraphs {
-            println!("[Subgraph `{}`]", name);
+        for subgraph in subgraphs {
+            println!("[Subgraph `{}`]", subgraph.name);
             println!("{}", subgraph.schema.schema());
             println!(); // newline
         }

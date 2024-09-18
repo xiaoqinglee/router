@@ -2081,7 +2081,7 @@ mod tests {
 
     fn test_schema_name() -> SubgraphName {
         static SCHEMA_NAME: OnceLock<SubgraphName> = OnceLock::new();
-        SCHEMA_NAME.get_or_init(|| SubgraphName::new_test("test")).clone()
+        SCHEMA_NAME.get_or_init(|| SubgraphName::new_unchecked("test")).clone()
     }
 
     fn test_query_graph_from_schema_sdl(sdl: &str) -> Result<QueryGraph, FederationError> {

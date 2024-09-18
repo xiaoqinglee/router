@@ -85,7 +85,7 @@ impl ValidFederationSubgraph {
         schema: ValidFederationSchema,
     ) -> Self {
         Self {
-            name: SubgraphName::new(name),
+            name: SubgraphName::new_unchecked(name),
             url: url.to_string(),
             schema,
         }

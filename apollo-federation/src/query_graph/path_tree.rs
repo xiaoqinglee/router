@@ -583,7 +583,7 @@ mod tests {
         let (schema, mut executable_document) = parse_schema_and_operation(src);
         let (_, operation) = executable_document.operations.named.first_mut().unwrap();
 
-        let source_name = SubgraphName::new_test("Test");
+        let source_name = SubgraphName::new_unchecked("Test");
 
         let query_graph =
             Arc::new(build_query_graph(source_name.clone(), schema.clone()).unwrap());
