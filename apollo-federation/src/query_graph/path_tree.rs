@@ -16,6 +16,7 @@ use crate::query_graph::graph_path::OpGraphPath;
 use crate::query_graph::graph_path::OpGraphPathTrigger;
 use crate::query_graph::QueryGraph;
 use crate::query_graph::QueryGraphNode;
+use crate::supergraph::SubgraphName;
 use crate::utils::FallibleIterator;
 
 /// A "merged" tree representation for a vector of `GraphPath`s that start at a common query graph
@@ -149,7 +150,7 @@ impl OpPathTree {
         self.is_all_in_same_subgraph_internal(&node_weight.source)
     }
 
-    fn is_all_in_same_subgraph_internal(&self, target: &Arc<str>) -> Result<bool, FederationError> {
+    fn is_all_in_same_subgraph_internal(&self, target: &SubgraphName) -> Result<bool, FederationError> {
         let node_weight = self.graph.node_weight(self.node)?;
         if node_weight.source != *target {
             return Ok(false);
@@ -480,6 +481,7 @@ mod tests {
     use crate::query_graph::QueryGraphEdgeTransition;
     use crate::schema::position::SchemaRootDefinitionKind;
     use crate::schema::ValidFederationSchema;
+    use crate::supergraph::SubgraphName;
 
     // NB: stole from operation.rs
     fn parse_schema_and_operation(
@@ -579,10 +581,12 @@ mod tests {
         "#;
 
         let (schema, mut executable_document) = parse_schema_and_operation(src);
-        let (op_name, operation) = executable_document.operations.named.first_mut().unwrap();
+        let (_, operation) = executable_document.operations.named.first_mut().unwrap();
+
+        let source_name = SubgraphName::new_test("Test");
 
         let query_graph =
-            Arc::new(build_query_graph(op_name.to_string().into(), schema.clone()).unwrap());
+            Arc::new(build_query_graph(source_name.clone(), schema.clone()).unwrap());
 
         let path1 =
             build_graph_path(&query_graph, SchemaRootDefinitionKind::Query, &["t", "id"]).unwrap();

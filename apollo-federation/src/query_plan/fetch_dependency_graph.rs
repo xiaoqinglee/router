@@ -76,6 +76,7 @@ use crate::subgraph::spec::ANY_SCALAR_NAME;
 use crate::subgraph::spec::ENTITIES_QUERY;
 use crate::supergraph::FEDERATION_REPRESENTATIONS_ARGUMENTS_NAME;
 use crate::supergraph::FEDERATION_REPRESENTATIONS_VAR_NAME;
+use crate::supergraph::SubgraphName;
 use crate::utils::logging::snapshot;
 
 /// Represents the value of a `@defer(label:)` argument.
@@ -90,10 +91,11 @@ type DeferredNodes = multimap::MultiMap<DeferRef, NodeIndex<u32>>;
 //
 // The JS codebase additionally has a property named `subgraphAndMergeAtKey` that was used as a
 // precomputed map key, but this isn't necessary in Rust since we can use `PartialEq`/`Eq`/`Hash`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 pub(crate) struct FetchDependencyGraphNode {
     /// The subgraph this fetch is queried against.
-    pub(crate) subgraph_name: Arc<str>,
+    pub(crate) subgraph_name: SubgraphName,
     /// Which root operation kind the fetch should have.
     root_kind: SchemaRootDefinitionKind,
     /// The parent type of the fetch's selection set. For fetches against the root, this is the
@@ -115,7 +117,7 @@ pub(crate) struct FetchDependencyGraphNode {
     /// The fetch ID generation, if one is necessary (used when handling `@defer`).
     ///
     /// This can be treated as an Option using `OnceLock::get()`.
-    #[serde(skip)]
+    #[cfg_attr(feature = "snapshot_tracing", serde(skip))]
     id: OnceLock<u64>,
     /// The label of the `@defer` block this fetch appears in, if any.
     defer_ref: Option<DeferRef>,
@@ -200,30 +202,31 @@ type FetchDependencyGraphPetgraph =
 ///
 /// In the graph, two fetches are connected if one of them (the parent/head) must be performed
 /// strictly before the other one (the child/tail).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 pub(crate) struct FetchDependencyGraph {
     /// The supergraph schema that generated the federated query graph.
-    #[serde(skip)]
+    #[cfg_attr(feature = "snapshot_tracing", serde(skip))]
     pub(crate) supergraph_schema: ValidFederationSchema,
     /// The federated query graph that generated the fetches. (This also contains the subgraph
     /// schemas.)
-    #[serde(skip)]
+    #[cfg_attr(feature = "snapshot_tracing", serde(skip))]
     federated_query_graph: Arc<QueryGraph>,
     /// The nodes/edges of the fetch dependency graph. Note that this must be a stable graph since
     /// we remove nodes/edges during optimizations.
     graph: FetchDependencyGraphPetgraph,
     /// The root nodes by subgraph name, representing the fetches against root operation types of
     /// the subgraphs.
-    root_nodes_by_subgraph: IndexMap<Arc<str>, NodeIndex>,
+    root_nodes_by_subgraph: IndexMap<SubgraphName, NodeIndex>,
     /// Tracks metadata about deferred blocks and their dependencies on one another.
     // TODO(@TylerBloom): Since defer is not supported yet. Once it is, having this field in the
     // serialized output will be needed.
-    #[serde(skip)]
+    #[cfg_attr(feature = "snapshot_tracing", serde(skip))]
     pub(crate) defer_tracking: DeferTracking,
     /// The initial fetch ID generation (used when handling `@defer`).
     starting_id_generation: u64,
     /// The current fetch ID generation (used when handling `@defer`).
-    #[serde(skip)]
+    #[cfg_attr(feature = "snapshot_tracing", serde(skip))]
     fetch_id_generation: FetchIdGenerator,
     /// Whether this fetch dependency graph has undergone a transitive reduction.
     is_reduced: bool,
@@ -668,7 +671,7 @@ impl FetchDependencyGraph {
 
     pub(crate) fn root_node_by_subgraph_iter(
         &self,
-    ) -> impl Iterator<Item = (&Arc<str>, &NodeIndex)> {
+    ) -> impl Iterator<Item = (&SubgraphName, &NodeIndex)> {
         self.root_nodes_by_subgraph.iter()
     }
 
@@ -681,7 +684,7 @@ impl FetchDependencyGraph {
 
     pub(crate) fn get_or_create_root_node(
         &mut self,
-        subgraph_name: &Arc<str>,
+        subgraph_name: &SubgraphName,
         root_kind: SchemaRootDefinitionKind,
         parent_type: CompositeTypeDefinitionPosition,
     ) -> Result<NodeIndex, FederationError> {
@@ -703,7 +706,7 @@ impl FetchDependencyGraph {
 
     fn new_root_type_node(
         &mut self,
-        subgraph_name: Arc<str>,
+        subgraph_name: SubgraphName,
         root_kind: SchemaRootDefinitionKind,
         parent_type: &ObjectTypeDefinitionPosition,
         merge_at: Option<Vec<FetchDataPathElement>>,
@@ -722,7 +725,7 @@ impl FetchDependencyGraph {
 
     pub(crate) fn new_node(
         &mut self,
-        subgraph_name: Arc<str>,
+        subgraph_name: SubgraphName,
         parent_type: CompositeTypeDefinitionPosition,
         has_inputs: bool,
         root_kind: SchemaRootDefinitionKind,
@@ -792,7 +795,7 @@ impl FetchDependencyGraph {
 
     fn get_or_create_key_node(
         &mut self,
-        subgraph_name: &Arc<str>,
+        subgraph_name: &SubgraphName,
         merge_at: &[FetchDataPathElement],
         type_: &CompositeTypeDefinitionPosition,
         parent: ParentRelation,
@@ -851,7 +854,7 @@ impl FetchDependencyGraph {
 
     fn new_key_node(
         &mut self,
-        subgraph_name: &Arc<str>,
+        subgraph_name: &SubgraphName,
         merge_at: Vec<FetchDataPathElement>,
         defer_ref: Option<DeferRef>,
     ) -> Result<NodeIndex, FederationError> {
@@ -1339,7 +1342,7 @@ impl FetchDependencyGraph {
             _ => None,
         };
 
-        let get_subgraph_schema = |subgraph_name: &Arc<str>| {
+        let get_subgraph_schema = |subgraph_name: &SubgraphName| {
             self.federated_query_graph
                 .schema_by_source(subgraph_name)
                 .cloned()
@@ -2658,7 +2661,7 @@ impl FetchDependencyGraphNode {
                 .collect()
         }
         let node = super::PlanNode::Fetch(Box::new(super::FetchNode {
-            subgraph_name: self.subgraph_name.clone(),
+            subgraph_name: self.subgraph_name.to_cloned_arc(),
             id: self.id.get().copied(),
             variable_usages,
             requires: input_nodes

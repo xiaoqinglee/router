@@ -131,7 +131,6 @@ impl Merger {
     fn merge(&mut self, subgraphs: ValidFederationSubgraphs) -> Result<MergeSuccess, MergeFailure> {
         let mut subgraphs = subgraphs
             .into_iter()
-            .map(|(_, subgraph)| subgraph)
             .collect_vec();
         subgraphs.sort_by(|s1, s2| s1.name.as_ref().cmp(s2.name.as_ref()));
         let mut subgraphs_and_enum_values: Vec<(&ValidFederationSubgraph, Name)> = Vec::new();

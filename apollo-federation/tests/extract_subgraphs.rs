@@ -90,7 +90,7 @@ fn can_extract_subgraph() {
         .expect("Should have been able to extract subgraphs");
 
     let mut snapshot = String::new();
-    for (_name, subgraph) in subgraphs {
+    for subgraph in subgraphs {
         use std::fmt::Write;
 
         _ = writeln!(
@@ -371,7 +371,7 @@ fn extracts_demand_control_directives() {
     .expect("extracts subgraphs");
 
     let mut snapshot = String::new();
-    for (_name, subgraph) in subgraphs {
+    for subgraph in subgraphs {
         use std::fmt::Write;
 
         _ = writeln!(
@@ -499,7 +499,7 @@ fn extracts_renamed_demand_control_directives() {
   .expect("extracts");
 
     let mut snapshot = String::new();
-    for (_name, subgraph) in subgraphs {
+    for subgraph in subgraphs {
         use std::fmt::Write;
 
         _ = writeln!(
@@ -592,7 +592,7 @@ fn does_not_extract_demand_control_directive_name_conflicts() {
     .expect("extracts");
 
     let mut snapshot = String::new();
-    for (_name, subgraph) in subgraphs {
+    for subgraph in subgraphs {
         use std::fmt::Write;
 
         _ = writeln!(
@@ -685,7 +685,7 @@ fn does_not_extract_renamed_demand_control_directive_name_conflicts() {
     .expect("extracts");
 
     let mut snapshot = String::new();
-    for (_name, subgraph) in subgraphs {
+    for subgraph in subgraphs {
         use std::fmt::Write;
 
         _ = writeln!(

@@ -50,14 +50,18 @@ impl FederationSubgraphs {
     pub(super) fn get_mut(&mut self, name: impl AsRef<str>) -> Option<&mut FederationSubgraph> {
         self.subgraphs.get_mut(name.as_ref())
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &FederationSubgraph> {
+        self.subgraphs.values()
+    }
 }
 
 impl IntoIterator for FederationSubgraphs {
-    type Item = <IndexMap<Arc<str>, FederationSubgraph> as IntoIterator>::Item;
-    type IntoIter = <IndexMap<Arc<str>, FederationSubgraph> as IntoIterator>::IntoIter;
+    type Item = FederationSubgraph;
+    type IntoIter = indexmap::map::IntoValues<Arc<str>, FederationSubgraph>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.subgraphs.into_iter()
+        self.subgraphs.into_values()
     }
 }
 
@@ -125,13 +129,17 @@ impl ValidFederationSubgraphs {
     pub fn get(&self, name: impl AsRef<str>) -> Option<&ValidFederationSubgraph> {
         self.subgraphs.get(name.as_ref())
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ValidFederationSubgraph> {
+        self.subgraphs.values()
+    }
 }
 
 impl IntoIterator for ValidFederationSubgraphs {
-    type Item = <IndexMap<Arc<str>, ValidFederationSubgraph> as IntoIterator>::Item;
-    type IntoIter = <IndexMap<Arc<str>, ValidFederationSubgraph> as IntoIterator>::IntoIter;
+    type Item = ValidFederationSubgraph;
+    type IntoIter = indexmap::map::IntoValues<Arc<str>, ValidFederationSubgraph>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.subgraphs.into_iter()
+        self.subgraphs.into_values()
     }
 }

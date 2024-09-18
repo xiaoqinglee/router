@@ -44,6 +44,7 @@ use crate::schema::position::OutputTypeDefinitionPosition;
 use crate::schema::position::SchemaRootDefinitionKind;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
+use crate::supergraph::SubgraphName;
 use crate::utils::logging::snapshot;
 use crate::ApiSchemaOptions;
 use crate::Supergraph;
@@ -202,7 +203,7 @@ pub struct QueryPlanner {
     supergraph_schema: ValidFederationSchema,
     api_schema: ValidFederationSchema,
     subgraph_federation_spec_definitions:
-        Arc<IndexMap<Arc<str>, &'static FederationSpecDefinition>>,
+        Arc<IndexMap<SubgraphName, &'static FederationSpecDefinition>>,
     /// A set of the names of interface types for which at least one subgraph use an
     /// @interfaceObject to abstract that interface.
     interface_types_with_interface_objects: IndexSet<InterfaceTypeDefinitionPosition>,
@@ -326,7 +327,7 @@ impl QueryPlanner {
         })
     }
 
-    pub fn subgraph_schemas(&self) -> &IndexMap<Arc<str>, ValidFederationSchema> {
+    pub fn subgraph_schemas(&self) -> &IndexMap<SubgraphName, ValidFederationSchema> {
         self.federated_query_graph.subgraph_schemas()
     }
 
@@ -362,7 +363,7 @@ impl QueryPlanner {
                 (subgraphs.next(), subgraphs.next())
             {
                 let node = FetchNode {
-                    subgraph_name: subgraph_name.clone(),
+                    subgraph_name: subgraph_name.to_cloned_arc(),
                     operation_document: document.clone(),
                     operation_name: operation.name.clone(),
                     operation_kind: operation.operation_type,
@@ -712,7 +713,7 @@ fn compute_root_serial_dependency_graph(
     Ok(digest)
 }
 
-fn only_root_subgraph(graph: &FetchDependencyGraph) -> Result<Arc<str>, FederationError> {
+fn only_root_subgraph(graph: &FetchDependencyGraph) -> Result<SubgraphName, FederationError> {
     let mut iter = graph.root_node_by_subgraph_iter();
     let (Some((name, _)), None) = (iter.next(), iter.next()) else {
         return Err(FederationError::internal(format!(
@@ -884,7 +885,7 @@ fn compute_plan_for_defer_conditionals(
 pub(crate) struct RebasedFragments {
     original_fragments: NamedFragments,
     /// Map key: subgraph name
-    rebased_fragments: IndexMap<Arc<str>, NamedFragments>,
+    rebased_fragments: IndexMap<SubgraphName, NamedFragments>,
 }
 
 impl RebasedFragments {
@@ -897,11 +898,11 @@ impl RebasedFragments {
 
     fn for_subgraph(
         &mut self,
-        subgraph_name: impl Into<Arc<str>>,
+        subgraph_name: SubgraphName,
         subgraph_schema: &ValidFederationSchema,
     ) -> &NamedFragments {
         self.rebased_fragments
-            .entry(subgraph_name.into())
+            .entry(subgraph_name)
             .or_insert_with(|| {
                 self.original_fragments
                     .rebase_on(subgraph_schema)
@@ -920,13 +921,13 @@ impl SubgraphOperationCompression {
     /// Compress a subgraph operation.
     pub(crate) fn compress(
         &mut self,
-        subgraph_name: &Arc<str>,
+        subgraph_name: &SubgraphName,
         subgraph_schema: &ValidFederationSchema,
         operation: Operation,
     ) -> Result<Operation, FederationError> {
         match self {
             Self::ReuseFragments(fragments) => {
-                let rebased = fragments.for_subgraph(Arc::clone(subgraph_name), subgraph_schema);
+                let rebased = fragments.for_subgraph(subgraph_name.clone(), subgraph_schema);
                 let mut operation = operation;
                 operation.reuse_fragments(rebased)?;
                 Ok(operation)

@@ -89,6 +89,7 @@ use crate::utils::FallibleIterator;
 ///
 /// Subgraph names can only be created during subgraph extraction.
 #[derive(Clone)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 pub struct SubgraphName(Arc<str>);
 
 type GraphQLNameToSubgraphName = IndexMap<Name, SubgraphName>;
@@ -99,7 +100,19 @@ impl SubgraphName {
         Self(s.into())
     }
 
-    fn root() -> Self {
+    /// The user of this function is responsible for ensuring that only one subgraph name instance
+    /// is created for a given value.
+    #[cfg(test)]
+    pub(crate) fn new_test(s: &str) -> Self {
+        Self(s.into())
+    }
+
+    pub(crate) fn dummy() -> Self {
+        static DUMMY_NAME: OnceLock<Arc<str>> = OnceLock::new();
+        Self(DUMMY_NAME.get_or_init(|| Arc::from("DUMMY_SOURCE_IF_YOU_SEE_THIS_ITS_BROKEN")).clone())
+    }
+
+    pub(crate) fn federated_graph_root() -> Self {
         static ROOT_NAME: OnceLock<Arc<str>> = OnceLock::new();
         Self(ROOT_NAME.get_or_init(|| Arc::from("_")).clone())
     }
@@ -201,7 +214,7 @@ pub(crate) fn extract_subgraphs_from_supergraph(
     }
 
     let mut valid_subgraphs = ValidFederationSubgraphs::new();
-    for (_, mut subgraph) in subgraphs {
+    for mut subgraph in subgraphs {
         let valid_subgraph_schema = if validate_extracted_subgraphs {
             match subgraph.schema.validate_or_return_self() {
                 Ok(schema) => schema,

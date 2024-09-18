@@ -273,7 +273,7 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
         let op_name = self.operation_name.as_ref().map(|name| {
             let counter = self.counter;
             self.counter += 1;
-            let subgraph = to_valid_graphql_name(&node.subgraph_name).unwrap_or("".into());
+            let subgraph = to_valid_graphql_name(node.subgraph_name.as_ref()).unwrap_or("".into());
             // `name` was already a valid name so this concatenation should be too
             Name::new(&format!("{name}__{subgraph}__{counter}")).unwrap()
         });

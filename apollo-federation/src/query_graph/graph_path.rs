@@ -57,6 +57,7 @@ use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::OutputTypeDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
+use crate::supergraph::SubgraphName;
 
 /// An immutable path in a query graph.
 ///
@@ -578,7 +579,8 @@ impl std::fmt::Display for SimultaneousPaths {
 // PORT_NOTE: The JS codebase stored a `ConditionResolver` callback here, but it was the same for
 // a given traversal (and cached resolution across the traversal), so we accordingly store it in
 // `QueryPlanTraversal` and pass it down when needed instead.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 pub(crate) struct SimultaneousPathsWithLazyIndirectPaths {
     pub(crate) paths: SimultaneousPaths,
     pub(crate) context: OpGraphPathContext,
@@ -592,17 +594,16 @@ pub(crate) struct SimultaneousPathsWithLazyIndirectPaths {
 /// basically always be tiny (it's bounded by the number of distinct key on a given type, so usually
 /// 2-3 max; even in completely unrealistic cases, it's hard bounded by the number of subgraphs), so
 /// a `Vec` is going to perform a lot better than `IndexSet` in practice.
-#[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct ExcludedDestinations(Arc<Vec<Arc<str>>>);
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
+pub(crate) struct ExcludedDestinations(Arc<Vec<SubgraphName>>);
 
 impl ExcludedDestinations {
-    fn is_excluded(&self, destination: &str) -> bool {
-        self.0
-            .iter()
-            .any(|excluded| excluded.as_ref() == destination)
+    fn is_excluded(&self, destination: &SubgraphName) -> bool {
+        self.0.contains(destination)
     }
 
-    fn add_excluded(&self, destination: &Arc<str>) -> Self {
+    fn add_excluded(&self, destination: &SubgraphName) -> Self {
         if !self.is_excluded(destination) {
             let mut new = self.0.as_ref().clone();
             new.push(destination.clone());
@@ -655,7 +656,8 @@ impl Default for ExcludedConditions {
     }
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 pub(crate) struct IndirectPaths<TTrigger, TEdge>
 where
     TTrigger: Eq + Hash,
@@ -730,7 +732,8 @@ impl OpIndirectPaths {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 struct Unadvanceables(Vec<Unadvanceable>);
 
 impl Display for Unadvanceables {
@@ -748,11 +751,12 @@ impl Display for Unadvanceables {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 struct Unadvanceable {
     reason: UnadvanceableReason,
-    from_subgraph: Arc<str>,
-    to_subgraph: Arc<str>,
+    from_subgraph: SubgraphName,
+    to_subgraph: SubgraphName,
     details: String,
 }
 
@@ -816,7 +820,8 @@ pub(crate) struct ClosedBranch(pub(crate) Vec<Arc<ClosedPath>>);
 
 /// A list of the options generated during query planning for a specific "open branch", which is a
 /// partial/open path in a GraphQL operation (i.e. one that does not end in a leaf field).
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 pub(crate) struct OpenBranch(pub(crate) Vec<SimultaneousPathsWithLazyIndirectPaths>);
 
 impl<TTrigger, TEdge> GraphPath<TTrigger, TEdge>
@@ -1446,7 +1451,7 @@ where
         // be found).
         type BestPathInfo<TTrigger, TEdge> =
             Option<(Arc<GraphPath<TTrigger, TEdge>>, QueryPlanCost)>;
-        let mut best_path_by_source: IndexMap<Arc<str>, BestPathInfo<TTrigger, TEdge>> =
+        let mut best_path_by_source: IndexMap<SubgraphName, BestPathInfo<TTrigger, TEdge>> =
             IndexMap::default();
         let dead_ends = vec![];
         // Note that through `excluded` we avoid taking the same edge from multiple options. But
@@ -2275,7 +2280,7 @@ impl OpGraphPath {
     // PORT_NOTE: In the JS code, this method was a free-standing function called "anImplementationIsEntityWithFieldShareable".
     fn has_an_entity_implementation_with_shareable_field(
         &self,
-        source: &Arc<str>,
+        source: &SubgraphName,
         interface_field_pos: InterfaceFieldDefinitionPosition,
     ) -> Result<bool, FederationError> {
         let fed_schema = self.graph.schema_by_source(source)?;
@@ -3850,6 +3855,7 @@ mod tests {
     use crate::query_graph::graph_path::OpPathElement;
     use crate::schema::position::ObjectFieldDefinitionPosition;
     use crate::schema::ValidFederationSchema;
+    use crate::supergraph::SubgraphName;
 
     #[test]
     fn path_display() {
@@ -3867,7 +3873,7 @@ mod tests {
         "#;
         let schema = Schema::parse_and_validate(src, "./").unwrap();
         let schema = ValidFederationSchema::new(schema).unwrap();
-        let name = "S1".into();
+        let name = SubgraphName::new_test("S1");
         let graph = build_query_graph(name, schema.clone()).unwrap();
         let path = OpGraphPath::new(Arc::new(graph), NodeIndex::new(0)).unwrap();
         // NOTE: in general GraphPath would be used against a federated supergraph which would have

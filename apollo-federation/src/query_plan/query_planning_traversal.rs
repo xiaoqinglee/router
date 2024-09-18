@@ -3,7 +3,6 @@ use std::sync::Arc;
 use apollo_compiler::collections::IndexSet;
 use petgraph::graph::EdgeIndex;
 use petgraph::graph::NodeIndex;
-use serde::Serialize;
 use tracing::trace;
 
 use crate::error::FederationError;
@@ -107,7 +106,8 @@ pub(crate) struct QueryPlanningTraversal<'a, 'b> {
     resolver_cache: ConditionResolverCache,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 struct OpenBranchAndSelections {
     /// The options for this open branch.
     open_branch: OpenBranch,
@@ -126,7 +126,7 @@ impl std::fmt::Debug for PlanInfo {
     }
 }
 
-#[derive(Serialize)]
+#[cfg_attr(feature = "snapshot_tracing", derive(serde::Serialize))]
 pub(crate) struct BestQueryPlanInfo {
     /// The fetch dependency graph for this query plan.
     pub fetch_dependency_graph: FetchDependencyGraph,

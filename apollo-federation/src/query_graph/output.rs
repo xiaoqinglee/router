@@ -2,7 +2,6 @@
 // - Corresponds to the `graphviz` and `mermaid` modules from the JS federation.
 
 use std::fmt::Write;
-use std::sync::Arc;
 
 use petgraph::dot::Config;
 use petgraph::dot::Dot;
@@ -13,6 +12,7 @@ use petgraph::stable_graph::StableGraph;
 use crate::query_graph::QueryGraph;
 use crate::query_graph::QueryGraphEdge;
 use crate::query_graph::QueryGraphNode;
+use crate::supergraph::SubgraphName;
 
 type InnerGraph = DiGraph<QueryGraphNode, QueryGraphEdge>;
 type StableInnerGraph = StableGraph<QueryGraphNode, QueryGraphEdge>;
@@ -53,7 +53,7 @@ pub fn to_dot(graph: &QueryGraph) -> String {
 fn to_dot_federated(graph: &QueryGraph) -> Result<String, std::fmt::Error> {
     fn edge_within_cluster(
         graph: &StableInnerGraph,
-        cluster_name: &Arc<str>,
+        cluster_name: &SubgraphName,
         edge_index: EdgeIndex,
     ) -> bool {
         graph.edge_endpoints(edge_index).is_some_and(|(n1, n2)| {

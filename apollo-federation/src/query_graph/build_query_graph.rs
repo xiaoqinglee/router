@@ -40,6 +40,7 @@ use crate::schema::position::SchemaRootDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::position::UnionTypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
+use crate::supergraph::SubgraphName;
 use crate::supergraph::extract_subgraphs_from_supergraph;
 
 /// Builds a "federated" query graph based on the provided supergraph and API schema.
@@ -59,7 +60,7 @@ pub fn build_federated_query_graph(
     let for_query_planning = for_query_planning.unwrap_or(true);
     let mut query_graph = QueryGraph {
         // Note this name is a dummy initial name that gets overridden as we build the query graph.
-        current_source: "".into(),
+        current_source: SubgraphName::dummy(),
         graph: Default::default(),
         sources: Default::default(),
         subgraphs_by_name: Default::default(),
@@ -69,10 +70,10 @@ pub fn build_federated_query_graph(
     };
     let subgraphs =
         extract_subgraphs_from_supergraph(&supergraph_schema, validate_extracted_subgraphs)?;
-    for (subgraph_name, subgraph) in subgraphs {
+    for subgraph in subgraphs {
         let builder = SchemaQueryGraphBuilder::new(
             query_graph,
-            subgraph_name,
+            subgraph.name,
             subgraph.schema,
             Some(api_schema.clone()),
             for_query_planning,
@@ -88,12 +89,12 @@ pub fn build_federated_query_graph(
 ///
 /// Assumes the given schemas have been validated.
 pub fn build_query_graph(
-    name: Arc<str>,
+    name: SubgraphName,
     schema: ValidFederationSchema,
 ) -> Result<QueryGraph, FederationError> {
     let mut query_graph = QueryGraph {
         // Note this name is a dummy initial name that gets overridden as we build the query graph.
-        current_source: "".into(),
+        current_source: SubgraphName::dummy(),
         graph: Default::default(),
         sources: Default::default(),
         subgraphs_by_name: Default::default(),
@@ -111,7 +112,7 @@ struct BaseQueryGraphBuilder {
 }
 
 impl BaseQueryGraphBuilder {
-    fn new(mut query_graph: QueryGraph, source: Arc<str>, schema: ValidFederationSchema) -> Self {
+    fn new(mut query_graph: QueryGraph, source: SubgraphName, schema: ValidFederationSchema) -> Self {
         query_graph.current_source = source.clone();
         query_graph.sources.insert(source.clone(), schema);
         query_graph
@@ -241,7 +242,7 @@ impl SchemaQueryGraphBuilder {
     /// a subgraph query graph is being built.
     fn new(
         query_graph: QueryGraph,
-        source: Arc<str>,
+        source: SubgraphName,
         schema: ValidFederationSchema,
         api_schema: Option<ValidFederationSchema>,
         for_query_planning: bool,
@@ -962,7 +963,7 @@ impl FederatedQueryGraphBuilder {
     ) -> Result<Self, FederationError> {
         let base = BaseQueryGraphBuilder::new(
             query_graph,
-            FEDERATED_GRAPH_ROOT_SOURCE.into(),
+            SubgraphName::federated_graph_root(),
             // This is a dummy schema that should never be used, so it's fine if we assume validity
             // here (note that empty schemas have no Query type, making them invalid GraphQL).
             ValidFederationSchema::new(Valid::assume_valid(Schema::new()))?,
@@ -1458,7 +1459,7 @@ impl FederatedQueryGraphBuilder {
 
     fn add_provides_edges(
         base: &mut BaseQueryGraphBuilder,
-        source: &Arc<str>,
+        source: &SubgraphName,
         head: NodeIndex,
         provided: &SelectionSet,
         provide_id: u32,
@@ -1946,10 +1947,8 @@ impl FederatedQueryGraphBuilder {
     }
 }
 
-const FEDERATED_GRAPH_ROOT_SOURCE: &str = "_";
-
 struct FederatedQueryGraphBuilderSubgraphs {
-    map: IndexMap<Arc<str>, FederatedQueryGraphBuilderSubgraphData>,
+    map: IndexMap<SubgraphName, FederatedQueryGraphBuilderSubgraphData>,
 }
 
 impl FederatedQueryGraphBuilderSubgraphs {
@@ -2003,7 +2002,7 @@ impl FederatedQueryGraphBuilderSubgraphs {
 
     fn get(
         &self,
-        source: &str,
+        source: &SubgraphName,
     ) -> Result<&FederatedQueryGraphBuilderSubgraphData, FederationError> {
         self.map.get(source).ok_or_else(|| {
             SingleFederationError::Internal {
@@ -2055,6 +2054,8 @@ fn resolvable_key_applications<'doc>(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::OnceLock;
+
     use apollo_compiler::collections::IndexMap;
     use apollo_compiler::collections::IndexSet;
     use apollo_compiler::name;
@@ -2076,13 +2077,17 @@ mod tests {
     use crate::schema::position::ScalarTypeDefinitionPosition;
     use crate::schema::position::SchemaRootDefinitionKind;
     use crate::schema::ValidFederationSchema;
+    use crate::supergraph::SubgraphName;
 
-    const SCHEMA_NAME: &str = "test";
+    fn test_schema_name() -> SubgraphName {
+        static SCHEMA_NAME: OnceLock<SubgraphName> = OnceLock::new();
+        SCHEMA_NAME.get_or_init(|| SubgraphName::new_test("test")).clone()
+    }
 
     fn test_query_graph_from_schema_sdl(sdl: &str) -> Result<QueryGraph, FederationError> {
         let schema =
             ValidFederationSchema::new(Schema::parse_and_validate(sdl, "schema.graphql")?)?;
-        build_query_graph(SCHEMA_NAME.into(), schema)
+        build_query_graph(test_schema_name(), schema)
     }
 
     fn assert_node_type(
@@ -2095,7 +2100,7 @@ mod tests {
             *query_graph.node_weight(node)?,
             QueryGraphNode {
                 type_: QueryGraphNodeType::SchemaType(output_type_definition_position),
-                source: SCHEMA_NAME.into(),
+                source: test_schema_name(),
                 has_reachable_cross_subgraph_edges: false,
                 provide_id: None,
                 root_kind,
@@ -2134,7 +2139,7 @@ mod tests {
         let schema = query_graph.schema()?;
         field_pos.get(schema.schema())?;
         let expected_field_transition = QueryGraphEdgeTransition::FieldCollection {
-            source: SCHEMA_NAME.into(),
+            source: test_schema_name(),
             field_definition_position: field_pos.clone().into(),
             is_part_of_provides: false,
         };
