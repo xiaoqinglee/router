@@ -150,7 +150,10 @@ impl OpPathTree {
         self.is_all_in_same_subgraph_internal(&node_weight.source)
     }
 
-    fn is_all_in_same_subgraph_internal(&self, target: &SubgraphName) -> Result<bool, FederationError> {
+    fn is_all_in_same_subgraph_internal(
+        &self,
+        target: &SubgraphName,
+    ) -> Result<bool, FederationError> {
         let node_weight = self.graph.node_weight(self.node)?;
         if node_weight.source != *target {
             return Ok(false);
@@ -585,8 +588,7 @@ mod tests {
 
         let source_name = SubgraphName::new_unchecked("Test");
 
-        let query_graph =
-            Arc::new(build_query_graph(source_name.clone(), schema.clone()).unwrap());
+        let query_graph = Arc::new(build_query_graph(source_name.clone(), schema.clone()).unwrap());
 
         let path1 =
             build_graph_path(&query_graph, SchemaRootDefinitionKind::Query, &["t", "id"]).unwrap();

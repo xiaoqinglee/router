@@ -226,8 +226,7 @@ fn cmd_query_graph(file_paths: &[PathBuf]) -> Result<(), FederationError> {
     } else {
         "supergraph"
     };
-    let query_graph =
-        query_graph::build_query_graph(name.into(), supergraph.schema)?;
+    let query_graph = query_graph::build_query_graph(name.into(), supergraph.schema)?;
     println!("{}", query_graph::output::to_dot(&query_graph));
     Ok(())
 }

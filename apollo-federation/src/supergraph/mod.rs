@@ -110,7 +110,11 @@ impl SubgraphName {
 
     pub(crate) fn dummy() -> Self {
         static DUMMY_NAME: OnceLock<Arc<str>> = OnceLock::new();
-        Self(DUMMY_NAME.get_or_init(|| Arc::from("DUMMY_SOURCE_IF_YOU_SEE_THIS_ITS_BROKEN")).clone())
+        Self(
+            DUMMY_NAME
+                .get_or_init(|| Arc::from("DUMMY_SOURCE_IF_YOU_SEE_THIS_ITS_BROKEN"))
+                .clone(),
+        )
     }
 
     pub(crate) fn federated_graph_root() -> Self {

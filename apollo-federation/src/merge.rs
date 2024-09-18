@@ -129,9 +129,7 @@ impl Merger {
     }
 
     fn merge(&mut self, subgraphs: ValidFederationSubgraphs) -> Result<MergeSuccess, MergeFailure> {
-        let mut subgraphs = subgraphs
-            .into_iter()
-            .collect_vec();
+        let mut subgraphs = subgraphs.into_iter().collect_vec();
         subgraphs.sort_by(|s1, s2| s1.name.as_ref().cmp(s2.name.as_ref()));
         let mut subgraphs_and_enum_values: Vec<(&ValidFederationSubgraph, Name)> = Vec::new();
         for subgraph in &subgraphs {
@@ -1631,7 +1629,7 @@ mod tests {
             ))
             .unwrap();
         subgraphs
-            .add(ValidFederationSubgraph ::new(
+            .add(ValidFederationSubgraph::new(
                 "connector_Query_user_0",
                 "",
                 ValidFederationSchema::new(
@@ -1642,7 +1640,7 @@ mod tests {
             ))
             .unwrap();
         subgraphs
-            .add(ValidFederationSubgraph ::new(
+            .add(ValidFederationSubgraph::new(
                 "connector_User_d_1",
                 "",
                 ValidFederationSchema::new(
@@ -1652,7 +1650,7 @@ mod tests {
             ))
             .unwrap();
         subgraphs
-            .add(ValidFederationSubgraph ::new(
+            .add(ValidFederationSubgraph::new(
                 "graphql",
                 "",
                 ValidFederationSchema::new(

@@ -38,7 +38,10 @@ pub(crate) mod path_tree;
 
 pub use build_query_graph::build_federated_query_graph;
 
-pub fn build_query_graph(source_name: &str, schema: ValidFederationSchema) -> Result<QueryGraph,FederationError> {
+pub fn build_query_graph(
+    source_name: &str,
+    schema: ValidFederationSchema,
+) -> Result<QueryGraph, FederationError> {
     build_query_graph::build_query_graph(SubgraphName::new_unchecked(source_name), schema)
 }
 
@@ -409,7 +412,9 @@ impl QueryGraph {
         &self.subgraphs_by_name
     }
 
-    pub(crate) fn subgraphs(&self) -> impl Iterator<Item = (&SubgraphName, &ValidFederationSchema)> {
+    pub(crate) fn subgraphs(
+        &self,
+    ) -> impl Iterator<Item = (&SubgraphName, &ValidFederationSchema)> {
         self.subgraphs_by_name.iter()
     }
 

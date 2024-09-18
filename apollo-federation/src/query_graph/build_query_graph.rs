@@ -40,8 +40,8 @@ use crate::schema::position::SchemaRootDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::position::UnionTypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
-use crate::supergraph::SubgraphName;
 use crate::supergraph::extract_subgraphs_from_supergraph;
+use crate::supergraph::SubgraphName;
 
 /// Builds a "federated" query graph based on the provided supergraph and API schema.
 ///
@@ -112,7 +112,11 @@ struct BaseQueryGraphBuilder {
 }
 
 impl BaseQueryGraphBuilder {
-    fn new(mut query_graph: QueryGraph, source: SubgraphName, schema: ValidFederationSchema) -> Self {
+    fn new(
+        mut query_graph: QueryGraph,
+        source: SubgraphName,
+        schema: ValidFederationSchema,
+    ) -> Self {
         query_graph.current_source = source.clone();
         query_graph.sources.insert(source.clone(), schema);
         query_graph
@@ -2081,7 +2085,9 @@ mod tests {
 
     fn test_schema_name() -> SubgraphName {
         static SCHEMA_NAME: OnceLock<SubgraphName> = OnceLock::new();
-        SCHEMA_NAME.get_or_init(|| SubgraphName::new_unchecked("test")).clone()
+        SCHEMA_NAME
+            .get_or_init(|| SubgraphName::new_unchecked("test"))
+            .clone()
     }
 
     fn test_query_graph_from_schema_sdl(sdl: &str) -> Result<QueryGraph, FederationError> {

@@ -3,12 +3,11 @@ use std::sync::Arc;
 
 use apollo_compiler::collections::IndexMap;
 
+use super::SubgraphName;
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
 use crate::schema::FederationSchema;
 use crate::schema::ValidFederationSchema;
-
-use super::SubgraphName;
 
 pub(super) struct FederationSubgraph {
     pub(super) name: SubgraphName,
@@ -79,11 +78,7 @@ impl ValidFederationSubgraph {
     /// this should be called at most once per subgraph name.
     /// XXX(@goto-bus-stop): maybe this should actually be the API signature for
     /// ValidFederationSubgraphs::add, as we can check the invariant there^
-    pub(crate) fn new(
-        name: &str,
-        url: &str,
-        schema: ValidFederationSchema,
-    ) -> Self {
+    pub(crate) fn new(name: &str, url: &str, schema: ValidFederationSchema) -> Self {
         Self {
             name: SubgraphName::new_unchecked(name),
             url: url.to_string(),
