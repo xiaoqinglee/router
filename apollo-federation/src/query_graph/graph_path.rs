@@ -1204,7 +1204,7 @@ where
                         "Unexpectedly missing entry for non-trivial followup edges map",
                     ));
                 };
-                return Ok(Box::new(non_trivial_followup_edges.iter().copied()));
+                return Ok(Box::new(non_trivial_followup_edges.iter().rev().copied()));
             }
         }
 
