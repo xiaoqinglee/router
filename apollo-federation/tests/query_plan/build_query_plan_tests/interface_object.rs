@@ -774,55 +774,55 @@ fn it_handles_interface_object_input_rewrites_when_cloning_dependency_graph() {
         "#,
 
         @r###"
-        QueryPlan {
-          Sequence {
-            Fetch(service: "S1") {
+    QueryPlan {
+      Sequence {
+        Fetch(service: "S1") {
+          {
+            i {
+              __typename
+              i1
+              i2 {
+                __typename
+                t1
+              }
+            }
+          }
+        },
+        Parallel {
+          Flatten(path: "i.i2") {
+            Fetch(service: "S3") {
               {
-                i {
+                ... on T {
                   __typename
-                  i1
-                  i2 {
-                    __typename
-                    t1
-                  }
+                  t1
+                }
+              } =>
+              {
+                ... on T {
+                  __typename
+                  t2
                 }
               }
             },
-            Parallel {
-              Flatten(path: "i.i2") {
-                Fetch(service: "S4") {
-                  {
-                    ... on T {
-                      __typename
-                      t1
-                    }
-                  } =>
-                  {
-                    ... on T {
-                      __typename
-                      t2
-                    }
-                  }
-                },
-              },
-              Flatten(path: "i") {
-                Fetch(service: "S2") {
-                  {
-                    ... on I {
-                      __typename
-                      i1
-                    }
-                  } =>
-                  {
-                    ... on I {
-                      i3
-                    }
-                  }
-                },
-              },
+          },
+          Flatten(path: "i") {
+            Fetch(service: "S2") {
+              {
+                ... on I {
+                  __typename
+                  i1
+                }
+              } =>
+              {
+                ... on I {
+                  i3
+                }
+              }
             },
           },
-        }
-      "###
+        },
+      },
+    }
+    "###
     );
 }
