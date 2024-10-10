@@ -14,6 +14,9 @@ pub(crate) enum Result<T: HttpBody> {
 
     /// The connector was invoked and returned an HTTP response
     HttpResponse(http::Response<T>),
+
+    /// The connector returns JSON only , not a full HTTP response
+    JsonData(serde_json_bytes::Value),
 }
 
 impl<T: HttpBody> From<http::Response<T>> for Result<T> {

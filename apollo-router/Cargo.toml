@@ -103,6 +103,7 @@ derive_more = { version = "0.99.17", default-features = false, features = [
 dhat = { version = "0.3.3", optional = true }
 diff = "0.1.13"
 displaydoc = "0.2"
+extism = { workspace = true }
 flate2 = "1.0.30"
 fred = { version = "7.1.2", features = ["enable-rustls"] }
 futures = { version = "0.3.30", features = ["thread-pool"] }

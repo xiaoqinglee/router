@@ -12,6 +12,8 @@ use crate::json_ext::Path;
 pub(crate) enum Error {
     /// Request limit exceeded
     RequestLimitExceeded,
+    /// WASM call failed: {0}
+    WasmCallFailed(Box<dyn std::error::Error>),
 }
 
 impl Error {

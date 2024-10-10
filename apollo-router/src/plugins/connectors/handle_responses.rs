@@ -44,14 +44,11 @@ pub(crate) async fn handle_responses<T: HttpBody>(
     let mut errors = Vec::new();
     let count = responses.len();
     for response in responses {
-        let mut error = None;
         let response_key = response.key;
         let debug_request = response.debug_request;
 
-        match response.result {
-            ConnectorResult::Err(e) => {
-                error = Some(e.to_graphql_error(connector, None));
-            }
+        let result = match response.result {
+            ConnectorResult::Err(e) => Err(e.to_graphql_error(connector, None)),
             ConnectorResult::HttpResponse(response) => {
                 let (parts, body) = response.into_parts();
                 let body = &hyper::body::to_bytes(body).await.map_err(|_| {
@@ -74,7 +71,7 @@ pub(crate) async fn handle_responses<T: HttpBody>(
                         }
                     };
 
-                    let mut res_data = {
+                    let res_data = {
                         let (res, apply_to_errors) = response_key.selection().apply_with_vars(
                             &json_data,
                             &response_key.inputs().merge(connector.config.as_ref(), None),
@@ -95,86 +92,8 @@ pub(crate) async fn handle_responses<T: HttpBody>(
                         }
                         res.unwrap_or_else(|| Value::Null)
                     };
-
-                    match response_key {
-                        // add the response to the "data" using the root field name or alias
-                        ResponseKey::RootField {
-                            ref name,
-                            ref typename,
-                            ..
-                        } => {
-                            if let ResponseTypeName::Concrete(typename) = typename {
-                                inject_typename(&mut res_data, typename);
-                            }
-
-                            data.insert(name.clone(), res_data);
-                        }
-
-                        // add the response to the "_entities" array at the right index
-                        ResponseKey::Entity {
-                            index,
-                            ref typename,
-                            ..
-                        } => {
-                            if let ResponseTypeName::Concrete(typename) = typename {
-                                inject_typename(&mut res_data, typename);
-                            }
-
-                            let entities = data
-                                .entry(ENTITIES)
-                                .or_insert(Value::Array(Vec::with_capacity(count)));
-                            entities
-                                .as_array_mut()
-                                .ok_or_else(|| MergeError("entities is not an array".into()))?
-                                .insert(index, res_data);
-                        }
-
-                        // make an entity object and assign the response to the appropriate field or aliased field,
-                        // then add the object to the _entities array at the right index (or add the field to an existing object)
-                        ResponseKey::EntityField {
-                            index,
-                            ref field_name,
-                            ref typename,
-                            ..
-                        } => {
-                            let entities = data
-                                .entry(ENTITIES)
-                                .or_insert(Value::Array(Vec::with_capacity(count)))
-                                .as_array_mut()
-                                .ok_or_else(|| MergeError("entities is not an array".into()))?;
-
-                            match entities.get_mut(index) {
-                                Some(Value::Object(entity)) => {
-                                    entity.insert(field_name.clone(), res_data);
-                                }
-                                _ => {
-                                    let mut entity = serde_json_bytes::Map::new();
-                                    if let ResponseTypeName::Concrete(typename) = typename {
-                                        entity.insert(
-                                            TYPENAME,
-                                            Value::String(typename.clone().into()),
-                                        );
-                                    }
-                                    entity.insert(field_name.clone(), res_data);
-                                    entities.insert(index, Value::Object(entity));
-                                }
-                            };
-                        }
-                    }
+                    Ok(res_data)
                 } else {
-                    error = Some(
-                        FetchError::SubrequestHttpError {
-                            status_code: Some(parts.status.as_u16()),
-                            service: connector.id.label.clone(),
-                            reason: format!(
-                                "{}: {}",
-                                parts.status.as_str(),
-                                parts.status.canonical_reason().unwrap_or("Unknown")
-                            ),
-                        }
-                        .to_graphql_error(None)
-                        .add_subgraph_name(&connector.id.subgraph_name),
-                    );
                     if let Some(ref debug) = debug {
                         match serde_json::from_slice(body) {
                             Ok(json_data) => {
@@ -189,25 +108,103 @@ pub(crate) async fn handle_responses<T: HttpBody>(
                             }
                         }
                     }
+                    Err(FetchError::SubrequestHttpError {
+                        status_code: Some(parts.status.as_u16()),
+                        service: connector.id.label.clone(),
+                        reason: format!(
+                            "{}: {}",
+                            parts.status.as_str(),
+                            parts.status.canonical_reason().unwrap_or("Unknown")
+                        ),
+                    }
+                    .to_graphql_error(None)
+                    .add_subgraph_name(&connector.id.subgraph_name))
                 }
             }
-        }
+            ConnectorResult::JsonData(response_data) => Ok(response_data),
+        };
 
-        if let Some(error) = error {
-            match response_key {
-                // add a null to the "_entities" array at the right index
-                ResponseKey::Entity { index, .. } | ResponseKey::EntityField { index, .. } => {
-                    let entities = data
-                        .entry(ENTITIES)
-                        .or_insert(Value::Array(Vec::with_capacity(count)));
-                    entities
-                        .as_array_mut()
-                        .ok_or_else(|| MergeError("entities is not an array".into()))?
-                        .insert(index, Value::Null);
+        match result {
+            Ok(mut res_data) => {
+                match response_key {
+                    // add the response to the "data" using the root field name or alias
+                    ResponseKey::RootField {
+                        ref name,
+                        ref typename,
+                        ..
+                    } => {
+                        if let ResponseTypeName::Concrete(typename) = typename {
+                            inject_typename(&mut res_data, typename);
+                        }
+
+                        data.insert(name.clone(), res_data);
+                    }
+
+                    // add the response to the "_entities" array at the right index
+                    ResponseKey::Entity {
+                        index,
+                        ref typename,
+                        ..
+                    } => {
+                        if let ResponseTypeName::Concrete(typename) = typename {
+                            inject_typename(&mut res_data, typename);
+                        }
+
+                        let entities = data
+                            .entry(ENTITIES)
+                            .or_insert(Value::Array(Vec::with_capacity(count)));
+                        entities
+                            .as_array_mut()
+                            .ok_or_else(|| MergeError("entities is not an array".into()))?
+                            .insert(index, res_data);
+                    }
+
+                    // make an entity object and assign the response to the appropriate field or aliased field,
+                    // then add the object to the _entities array at the right index (or add the field to an existing object)
+                    ResponseKey::EntityField {
+                        index,
+                        ref field_name,
+                        ref typename,
+                        ..
+                    } => {
+                        let entities = data
+                            .entry(ENTITIES)
+                            .or_insert(Value::Array(Vec::with_capacity(count)))
+                            .as_array_mut()
+                            .ok_or_else(|| MergeError("entities is not an array".into()))?;
+
+                        match entities.get_mut(index) {
+                            Some(Value::Object(entity)) => {
+                                entity.insert(field_name.clone(), res_data);
+                            }
+                            _ => {
+                                let mut entity = serde_json_bytes::Map::new();
+                                if let ResponseTypeName::Concrete(typename) = typename {
+                                    entity.insert(TYPENAME, Value::String(typename.clone().into()));
+                                }
+                                entity.insert(field_name.clone(), res_data);
+                                entities.insert(index, Value::Object(entity));
+                            }
+                        };
+                    }
                 }
-                _ => {}
-            };
-            errors.push(error);
+            }
+            Err(error) => {
+                match response_key {
+                    // add a null to the "_entities" array at the right index
+                    ResponseKey::Entity { index, .. } | ResponseKey::EntityField { index, .. } => {
+                        let entities = data
+                            .entry(ENTITIES)
+                            .or_insert(Value::Array(Vec::with_capacity(count)));
+                        entities
+                            .as_array_mut()
+                            .ok_or_else(|| MergeError("entities is not an array".into()))?
+                            .insert(index, Value::Null);
+                    }
+                    _ => {}
+                };
+                errors.push(error);
+            }
         }
     }
 

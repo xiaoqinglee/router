@@ -53,6 +53,7 @@ apollo-compiler = "=1.0.0-beta.24"
 apollo-parser = "0.8.0"
 apollo-smith = "0.14.0"
 async-trait = "0.1.77"
+extism = "1.0.0"
 hex = { version = "0.4.3", features = ["serde"] }
 http = "0.2.11"
 insta = { version = "1.38.0", features = ["json", "redactions", "yaml", "glob"] }

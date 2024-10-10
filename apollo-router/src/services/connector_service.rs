@@ -1,15 +1,22 @@
 //! Tower service for connectors.
 
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::task::Poll;
 
+use apollo_compiler::ast::Value;
 use apollo_compiler::validation::Valid;
 use apollo_federation::sources::connect::Connector;
+use axum::body::HttpBody;
+use extism::Manifest;
+use extism::Plugin;
+use extism::Wasm;
 use futures::future::BoxFuture;
 use indexmap::IndexMap;
 use opentelemetry::Key;
 use parking_lot::Mutex;
+use serde_json_bytes::json;
 use tower::BoxError;
 use tower::ServiceExt;
 use tracing::Instrument;
@@ -19,20 +26,25 @@ use super::http::HttpClientServiceFactory;
 use super::http::HttpRequest;
 use super::new_service::ServiceFactory;
 use crate::error::FetchError;
+use crate::graphql;
 use crate::plugins::connectors::error::Error as ConnectorError;
+use crate::plugins::connectors::error::Error::WasmCallFailed;
 use crate::plugins::connectors::handle_responses::handle_responses;
 use crate::plugins::connectors::http::Request;
 use crate::plugins::connectors::http::Response as ConnectorResponse;
 use crate::plugins::connectors::http::Result as ConnectorResult;
 use crate::plugins::connectors::make_requests::make_requests;
 use crate::plugins::connectors::plugin::ConnectorContext;
+use crate::plugins::connectors::request_limit::RequestLimit;
 use crate::plugins::connectors::request_limit::RequestLimits;
 use crate::plugins::connectors::tracing::CONNECTOR_TYPE_HTTP;
 use crate::plugins::connectors::tracing::CONNECT_SPAN_NAME;
 use crate::plugins::subscription::SubscriptionConfig;
+use crate::services::router::body::RouterBody;
 use crate::services::ConnectRequest;
 use crate::services::ConnectResponse;
 use crate::spec::Schema;
+use crate::Context;
 
 pub(crate) const APOLLO_CONNECTOR_TYPE: Key = Key::from_static_str("apollo.connector.type");
 pub(crate) const APOLLO_CONNECTOR_DETAIL: Key = Key::from_static_str("apollo.connector.detail");
@@ -144,61 +156,16 @@ async fn execute(
 
     let requests = make_requests(request, connector, &debug).map_err(BoxError::from)?;
 
-    let tasks = requests.into_iter().map(
-        move |Request {
-                  request: req,
-                  key,
-                  debug_request,
-              }| {
-            // Returning an error from this closure causes all tasks to be cancelled and the operation
-            // to fail. This is the reason for the Result-wrapped-in-a-Result here. An `Err` on the
-            // inner result fails just that one task, but an `Err` on the outer result cancels all the
-            // tasks and fails the whole operation.
-            let context = context.clone();
-            let original_subgraph_name = original_subgraph_name.clone();
-            let request_limit = request_limit.clone();
-            async move {
-                if let Some(request_limit) = request_limit {
-                    if !request_limit.allow() {
-                        return Ok(ConnectorResponse {
-                            result: ConnectorResult::Err(ConnectorError::RequestLimitExceeded),
-                            key,
-                            debug_request,
-                        });
-                    }
-                }
-                let client = http_client_factory.create(&original_subgraph_name);
-                let req = HttpRequest {
-                    http_request: req,
-                    context,
-                };
-                let res = client.oneshot(req).await.map_err(|e| {
-                    match e.downcast::<FetchError>() {
-                        // Replace the internal subgraph name with the connector label
-                        Ok(inner) => match *inner {
-                            FetchError::SubrequestHttpError {
-                                status_code,
-                                service: _,
-                                reason,
-                            } => Box::new(FetchError::SubrequestHttpError {
-                                status_code,
-                                service: connector.id.label.clone(),
-                                reason,
-                            }),
-                            _ => inner,
-                        },
-                        Err(e) => e,
-                    }
-                })?;
-
-                Ok::<_, BoxError>(ConnectorResponse {
-                    result: ConnectorResult::HttpResponse(res.http_response),
-                    key,
-                    debug_request,
-                })
-            }
-        },
-    );
+    let tasks = requests.into_iter().map(|request| {
+        run_request(
+            request,
+            context.clone(),
+            original_subgraph_name.clone(),
+            request_limit.clone(),
+            http_client_factory,
+            connector.id.label.clone(),
+        )
+    });
 
     let responses = futures::future::try_join_all(tasks)
         .await
@@ -207,6 +174,95 @@ async fn execute(
     handle_responses(responses, connector, &debug)
         .await
         .map_err(BoxError::from)
+}
+
+async fn run_request(
+    Request {
+        request,
+        key,
+        debug_request,
+    }: Request,
+    context: Context,
+    original_subgraph_name: String,
+    request_limit: Option<Arc<RequestLimit>>,
+    http_client_factory: &HttpClientServiceFactory,
+    service: String,
+) -> Result<ConnectorResponse<RouterBody>, BoxError> {
+    let wasm_path = request.uri().authority().and_then(|authority| {
+        let str_value = authority.as_str();
+        str_value.ends_with(".wasm").then_some(str_value)
+    });
+    if let Some(wasm_path) = wasm_path {
+        let wasm = Wasm::file(wasm_path);
+        let manifest = Manifest::new([wasm]);
+        let mut plugin = Plugin::new(&manifest, [], true)?;
+        // TODO add context and stuff
+        let inputs = key.inputs().merge(None, None);
+        let input_str = serde_json::to_string(&inputs)?;
+        return tokio::task::spawn_blocking(move || {
+            // TODO: don't panic
+            // TODO: Implement FromBytes for serde_json_bytes::Value
+            let function_name = request.uri().path().trim_matches('/');
+            let result = plugin
+                .call::<&str, &str>(function_name, &input_str)
+                .map_err(|err| WasmCallFailed(err.into()))
+                .and_then(|result| {
+                    serde_json_bytes::Value::from_str(&result)
+                        .map_err(|err| WasmCallFailed(err.into()))
+                })
+                .into();
+            return ConnectorResponse {
+                result,
+                key,
+                debug_request,
+            };
+        })
+        .await
+        .map_err(|e| BoxError::from(e));
+    }
+    // Returning an error from this closure causes all tasks to be cancelled and the operation
+    // to fail. This is the reason for the Result-wrapped-in-a-Result here. An `Err` on the
+    // inner result fails just that one task, but an `Err` on the outer result cancels all the
+    // tasks and fails the whole operation.
+    let request_limit = request_limit.clone();
+    if let Some(request_limit) = request_limit {
+        if !request_limit.allow() {
+            return Ok(ConnectorResponse {
+                result: ConnectorResult::Err(ConnectorError::RequestLimitExceeded),
+                key,
+                debug_request,
+            });
+        }
+    }
+    let client = http_client_factory.create(&original_subgraph_name);
+    let req = HttpRequest {
+        http_request: request,
+        context,
+    };
+    let res = client.oneshot(req).await.map_err(|e| {
+        match e.downcast::<FetchError>() {
+            // Replace the internal subgraph name with the connector label
+            Ok(inner) => match *inner {
+                FetchError::SubrequestHttpError {
+                    status_code,
+                    service: _,
+                    reason,
+                } => Box::new(FetchError::SubrequestHttpError {
+                    status_code,
+                    service,
+                    reason,
+                }),
+                _ => inner,
+            },
+            Err(e) => e,
+        }
+    })?;
+
+    Ok::<_, BoxError>(ConnectorResponse {
+        result: ConnectorResult::HttpResponse(res.http_response),
+        key,
+        debug_request,
+    })
 }
 
 #[derive(Clone)]
