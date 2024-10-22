@@ -1,24 +1,27 @@
-use std::fmt::Display;
-use std::fmt::Formatter;
+mod shape;
+
 use std::ops::Range;
 
 use apollo_compiler::collections::IndexMap;
 use apollo_compiler::parser::LineColumn;
-use itertools::Itertools;
 use line_col::LineColLookup;
 use Outcome::*;
 
+pub use self::shape::Shape;
 use super::Code;
 use super::Message;
 use crate::sources::connect::json_selection::ArrowMethod;
 use crate::sources::connect::json_selection::KnownVariable;
 use crate::sources::connect::json_selection::LitExpr;
 use crate::sources::connect::json_selection::MethodArgs;
+use crate::sources::connect::json_selection::NamedSelection;
 use crate::sources::connect::json_selection::PathList;
 use crate::sources::connect::json_selection::Ranged;
 use crate::sources::connect::json_selection::WithRange;
 use crate::sources::connect::JSONSelection;
+use crate::sources::connect::Key;
 use crate::sources::connect::PathSelection;
+use crate::sources::connect::SubSelection;
 
 pub fn validate(
     mapping: &str,
@@ -44,7 +47,9 @@ pub fn validate(
     };
 
     let output_shape = match &parsed {
-        JSONSelection::Named(_) => Ok(Shape::Any), // TODO: validate_sub_selection(sub_selection, arg),
+        JSONSelection::Named(sub_selection) => {
+            validator.resolve_sub_selection(sub_selection, &input_shape)
+        }
         JSONSelection::Path(PathSelection { path }) => validator.resolve_path(path, &input_shape),
     };
 
@@ -55,143 +60,16 @@ pub fn validate(
         }
     };
 
+    // TODO: Also return either the required input shape or the unused fields from it
     // TODO: check actual_output_shape against output_shape
     Success(parsed)
 }
 
+#[derive(Debug)]
 pub enum Outcome {
     ParseError(Message),
     WithErrors(JSONSelection, Vec<Message>),
     Success(JSONSelection),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Shape {
-    /// We have no idea what shape this will be, so we can't validate it.
-    Any,
-    Bool,
-    Number,
-    String,
-    Array(Box<Shape>),
-    Object(IndexMap<String, Shape>),
-    /// Either the inner shape or null.
-    Nullable(Box<Shape>),
-    /// One of a number of shapes.
-    Union(Vec<Shape>),
-}
-
-impl Shape {
-    fn merge(self, other: Self) -> Self {
-        match (self, other) {
-            (Shape::Any, typed) | (typed, Shape::Any) => typed,
-            (Shape::Bool, Shape::Bool) => Shape::Bool,
-            (Shape::Number, Shape::Number) => Shape::Number,
-            (Shape::String, Shape::String) => Shape::String,
-            (Shape::Array(inner), Shape::Array(other_inner)) => {
-                Shape::Array(Box::new(inner.merge(*other_inner)))
-            }
-            (Shape::Object(inner), Shape::Object(mut other_inner)) => {
-                let mut merged =
-                    IndexMap::with_capacity_and_hasher(inner.len(), Default::default());
-                for (key, value) in inner {
-                    let other_value = other_inner.shift_remove(&key);
-                    let value = value.merge(other_value.unwrap_or(Shape::Any));
-                    merged.insert(key, value);
-                }
-                for (key, value) in other_inner {
-                    merged.insert(key, value);
-                }
-                Shape::Object(merged)
-            }
-            (Shape::Nullable(inner), other) | (other, Shape::Nullable(inner)) => {
-                Shape::Nullable(Box::new(inner.merge(other)))
-            }
-            (Shape::Union(inner), Shape::Union(other)) => {
-                Shape::Union(inner.into_iter().chain(other).dedup().collect())
-            }
-            (Shape::Union(inner), other) | (other, Shape::Union(inner)) => Shape::Union(
-                inner
-                    .into_iter()
-                    .chain(std::iter::once(other))
-                    .dedup()
-                    .collect(),
-            ),
-            (first, second) => Shape::Union(vec![first, second]),
-        }
-    }
-
-    fn get_key(&self, key: &str) -> Result<Self, String> {
-        match self {
-            Shape::Any => Ok(Shape::Any),
-            Shape::Bool | Shape::Number | Shape::String => {
-                Err(format!("Can't get key `{key}` from a {self}."))
-            }
-            Shape::Array(inner) => inner.get_key(key),
-            Shape::Object(attributes) => attributes
-                .get(key)
-                .cloned()
-                .ok_or_else(|| format!("Key `{key}` not found in {self}.")),
-            Shape::Nullable(inner) => inner.get_key(key),
-            Shape::Union(inners) => {
-                let mut key_union = Vec::with_capacity(inners.len());
-                for inner in inners {
-                    match inner.get_key(key) {
-                        Ok(inner) => key_union.push(inner.clone()),
-                        Err(err) => return Err(err),
-                    }
-                }
-                Ok(Shape::Union(key_union))
-            }
-        }
-    }
-}
-
-impl From<&serde_json_bytes::Value> for Shape {
-    fn from(value: &serde_json_bytes::Value) -> Self {
-        match value {
-            // If the value was null, we have no way of knowing what the true shape is.
-            serde_json_bytes::Value::Null => Shape::Nullable(Box::new(Shape::Any)),
-            serde_json_bytes::Value::Bool(_) => Shape::Bool,
-            serde_json_bytes::Value::Number(_) => Shape::Number,
-            serde_json_bytes::Value::String(_) => Shape::String,
-            serde_json_bytes::Value::Array(values) => {
-                let mut inner = Shape::Any;
-                for value in values {
-                    inner = inner.merge(Shape::from(value));
-                }
-                Shape::Array(Box::new(inner))
-            }
-            serde_json_bytes::Value::Object(object) => {
-                let mut inner =
-                    IndexMap::with_capacity_and_hasher(object.len(), Default::default());
-                for (key, value) in object {
-                    inner.insert(key.as_str().to_string(), Shape::from(value));
-                }
-                Shape::Object(inner)
-            }
-        }
-    }
-}
-
-impl Display for Shape {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Shape::Any => write!(f, "Any"),
-            Shape::Bool => write!(f, "Bool"),
-            Shape::Number => write!(f, "Number"),
-            Shape::String => write!(f, "String"),
-            Shape::Array(inner) => write!(f, "[{}]", inner),
-            Shape::Object(inner) => {
-                write!(f, "{inner:?}")
-            }
-            Shape::Nullable(inner) => write!(f, "{}?", inner),
-            Shape::Union(inner) => {
-                write!(f, "(")?;
-                write!(f, "{}", inner.iter().format(" | "))?;
-                write!(f, ")")
-            }
-        }
-    }
 }
 
 struct Validator<'a> {
@@ -240,13 +118,7 @@ impl Validator<'_> {
                 }
             }
             PathList::Key(key, tail) => {
-                let shape = input_shape.get_key(key.as_str()).map_err(|message| {
-                    vec![Message {
-                        code: Code::InvalidJsonSelection,
-                        message,
-                        locations: self.location(key),
-                    }]
-                })?;
+                let shape = self.get_key(input_shape, key)?;
                 self.resolve_path(tail, &shape)
             }
             PathList::Expr(expr, tail) => {
@@ -524,6 +396,106 @@ impl Validator<'_> {
             ArrowMethod::Not => {
                 todo!("Implement Not method")
             }
+        }
+    }
+
+    fn resolve_sub_selection(
+        &self,
+        sub_selection: &SubSelection,
+        input_shape: &Shape,
+    ) -> Result<Shape, Vec<Message>> {
+        let mut output_attributes =
+            IndexMap::with_capacity_and_hasher(sub_selection.selections.len(), Default::default());
+        let mut messages = Vec::new();
+        for named_selection in &sub_selection.selections {
+            match self.resolve_named_selection(named_selection, input_shape) {
+                Ok(new_attributes) => {
+                    output_attributes.extend(new_attributes);
+                }
+                Err(new_messages) => {
+                    messages.extend(new_messages);
+                }
+            }
+        }
+        if messages.is_empty() {
+            Ok(Shape::Object(output_attributes))
+        } else {
+            Err(messages)
+        }
+    }
+
+    fn resolve_named_selection(
+        &self,
+        named_selection: &NamedSelection,
+        input_shape: &Shape,
+    ) -> Result<Vec<(String, Shape)>, Vec<Message>> {
+        match named_selection {
+            NamedSelection::Group(alias, sub_selection) => {
+                let output_shape = self.resolve_sub_selection(sub_selection, input_shape)?;
+                Ok(vec![(alias.name().to_string(), output_shape)])
+            }
+            NamedSelection::Field(alias, key, sub_selection) => {
+                let mut shape = self.get_key(input_shape, key)?;
+                let field_name = alias
+                    .as_ref()
+                    .map(|alias| alias.name().to_string())
+                    .unwrap_or_else(|| key.as_string());
+                if let Some(sub_selection) = sub_selection {
+                    shape = self.resolve_sub_selection(sub_selection, &shape)?;
+                }
+                Ok(vec![(field_name, shape)])
+            }
+            NamedSelection::Path(alias, PathSelection { path }) => {
+                if let Some(alias) = alias {
+                    let field_name = alias.name().to_string();
+                    let shape = self.resolve_path(path, input_shape)?;
+                    Ok(vec![(field_name, shape)])
+                } else {
+                    let shape = self.resolve_path(path, input_shape)?;
+                    match shape {
+                        Shape::Any => Ok(Vec::new()),
+                        Shape::Object(attributes_to_flatten) => {
+                            Ok(attributes_to_flatten.into_iter().collect())
+                        }
+                        // In practice, this should be caught by the parser, but we have no way to guarantee that yet
+                        other => Err(vec![Message {
+                            code: Code::InvalidJsonSelection,
+                            message: format!("Expected an object, got {other:?}.", other = other),
+                            locations: self.location(path),
+                        }]),
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_key(&self, input_shape: &Shape, key: &WithRange<Key>) -> Result<Shape, Vec<Message>> {
+        input_shape.get_key(key.as_str()).map_err(|message| {
+            vec![Message {
+                code: Code::InvalidJsonSelection,
+                message,
+                locations: self.location(key),
+            }]
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json_bytes::json;
+
+    use super::*;
+
+    #[test]
+    fn denest_with_sub_selection() {
+        let mapping = "$.object.nested { first second } another";
+        let input_shape =
+            Shape::from(&json!({"object": {"nested": {"first": 1, "second": 2}}, "another": 3}));
+        let output_shape = Shape::from(&json!({"first": 1, "second": 2, "another": 3}));
+        let variables = IndexMap::default();
+        match validate(mapping, input_shape, output_shape, variables) {
+            Success(_) => {}
+            other => panic!("Expected Success, got {other:?}"),
         }
     }
 }

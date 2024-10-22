@@ -133,11 +133,24 @@ impl ExternalVarPaths for JSONSelection {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum NamedSelection {
+    /// Selecting a field from the input. In the simplest case, `a` is a named selection
+    /// with key `a`, no alias, and no subselection.
+    ///
+    /// An alias `b` can be defined like `b: a`.
+    ///
+    /// A subselection looks like `a { c }` (or `b: a { c }`).
     Field(Option<Alias>, WithRange<Key>, Option<SubSelection>),
-    // Represents either NamedPathSelection or PathWithSubSelection, with the
-    // invariant alias.is_some() || path.has_subselection() enforced by
-    // NamedSelection::parse_path.
+    /// Not fully represented by the enum yet, but this can only either be a path with an alias:
+    /// `a: some.nested.path { optional sub selection }`
+    /// Or a path without an alias _with_ a subselection for flattening:
+    ///
+    /// `$.some.nested.path { with sub selection }`
+    ///
+    /// A path with no alias and no subselection is prevented by the parser.
+    ///
+    /// TODO: Update this variant to only include the real possibilities
     Path(Option<Alias>, PathSelection),
+    /// Creating a new group, not based on an input group. Like `a: { b }`
     Group(Alias, SubSelection),
 }
 
@@ -687,7 +700,7 @@ impl ExternalVarPaths for PathList {
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct SubSelection {
-    pub(super) selections: Vec<NamedSelection>,
+    pub(crate) selections: Vec<NamedSelection>,
     pub(super) star: Option<StarSelection>,
     pub(super) range: OffsetRange,
 }
