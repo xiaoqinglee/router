@@ -51,12 +51,6 @@ impl VariableConditions {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct VariableCondition {
-    variable: Name,
-    negated: bool,
-}
-
 impl Conditions {
     /// Create conditions from a map of variable conditions. If empty, instead returns a
     /// condition that always evaluates to true.

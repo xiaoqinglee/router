@@ -19,6 +19,7 @@ mod entity;
 mod extended_type;
 mod graphql;
 mod http;
+mod mapping;
 mod selection;
 mod source_name;
 
@@ -45,6 +46,9 @@ use apollo_compiler::Schema;
 use coordinates::source_http_argument_coordinate;
 use extended_type::validate_extended_type;
 use itertools::Itertools;
+pub use mapping::validate as validate_mapping;
+pub use mapping::Outcome as MappingOutcome;
+pub use mapping::Shape as MappingShape;
 use source_name::SourceName;
 use url::Url;
 

@@ -14,7 +14,10 @@ pub use apply_to::*;
 // unused lint warning. If pretty code is needed in not test code, feel free to
 // remove the `#[cfg(test)]`.
 pub(crate) use known_var::*;
+pub(crate) use lit_expr::LitExpr;
 pub(crate) use location::Ranged;
+pub(crate) use location::WithRange;
+pub(crate) use methods::ArrowMethod;
 pub use parser::*;
 #[cfg(test)]
 pub(crate) use pretty::*;

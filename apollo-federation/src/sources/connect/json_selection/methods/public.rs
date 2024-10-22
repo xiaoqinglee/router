@@ -382,10 +382,10 @@ pub(super) fn size_method(
     }
 }
 
-// Returns a list of [{ key, value }, ...] objects for each key-value pair in
-// the object. Returning a list of [[ key, value ], ...] pairs might also seem
-// like an option, but GraphQL doesn't handle heterogeneous lists (or tuples) as
-// well as it handles objects with named properties like { key, value }.
+/// Returns a list of [{ key, value }, ...] objects for each key-value pair in
+/// the object. Returning a list of [[ key, value ], ...] pairs might also seem
+/// like an option, but GraphQL doesn't handle heterogeneous lists (or tuples) as
+/// well as it handles objects with named properties like { key, value }.
 pub(super) fn entries_method(
     method_name: &WithRange<String>,
     method_args: Option<&MethodArgs>,

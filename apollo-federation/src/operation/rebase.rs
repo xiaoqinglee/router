@@ -150,7 +150,7 @@ impl FederationError {
     fn is_rebase_error(&self) -> bool {
         matches!(
             self,
-            crate::error::FederationError::SingleFederationError {
+            FederationError::SingleFederationError {
                 inner: crate::error::SingleFederationError::InternalRebaseError(_),
                 ..
             }

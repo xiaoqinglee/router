@@ -1,6 +1,3 @@
-use apollo_compiler::collections::IndexMap;
-use apollo_compiler::collections::IndexSet;
-use lazy_static::lazy_static;
 use serde_json_bytes::Value as JSON;
 
 use super::immutable::InputPath;
@@ -18,137 +15,218 @@ use super::VarsWithPathsMap;
 // long-term. Once we have a better story for checking method type signatures
 // and versioning any behavioral changes, we should be able to expand/improve
 // the list of public::* methods more quickly/confidently.
+#[cfg(test)]
 mod future;
 mod public;
 
 #[cfg(test)]
 mod tests;
 
-type ArrowMethod = fn(
-    // Method name
-    method_name: &WithRange<String>,
-    // Arguments passed to this method
-    method_args: Option<&MethodArgs>,
-    // The JSON input value (data)
-    data: &JSON,
-    // The variables
-    vars: &VarsWithPathsMap,
-    // The input_path (may contain integers)
-    input_path: &InputPath<JSON>,
-    // The rest of the PathList
-    tail: &WithRange<PathList>,
-) -> (Option<JSON>, Vec<ApplyToError>);
-
-lazy_static! {
-    // This set controls which ->methods are exposed for use in connector
-    // schemas. Non-public methods are still implemented and tested, but will
-    // not be returned from lookup_arrow_method outside of tests.
-    static ref PUBLIC_ARROW_METHODS: IndexSet<&'static str> = {
-        let mut public_methods = IndexSet::default();
-
-        // Before enabling a method here, move it from the future:: namespace to
-        // the top level of the methods.rs file.
-        public_methods.insert("echo");
-        // public_methods.insert("typeof");
-        public_methods.insert("map");
-        // public_methods.insert("eq");
-        public_methods.insert("match");
-        // public_methods.insert("matchIf");
-        // public_methods.insert("match_if");
-        // public_methods.insert("add");
-        // public_methods.insert("sub");
-        // public_methods.insert("mul");
-        // public_methods.insert("div");
-        // public_methods.insert("mod");
-        public_methods.insert("first");
-        public_methods.insert("last");
-        public_methods.insert("slice");
-        public_methods.insert("size");
-        // public_methods.insert("has");
-        // public_methods.insert("get");
-        // public_methods.insert("keys");
-        // public_methods.insert("values");
-        public_methods.insert("entries");
-        // public_methods.insert("not");
-        // public_methods.insert("or");
-        // public_methods.insert("and");
-
-        public_methods
-    };
-
-    // This map registers all the built-in ->methods that are currently
-    // implemented, even the non-public ones that are not included in the
-    // PUBLIC_ARROW_METHODS set.
-    static ref ARROW_METHODS: IndexMap<String, ArrowMethod> = {
-        let mut methods = IndexMap::<String, ArrowMethod>::default();
-
-        // This built-in method returns its first input argument as-is, ignoring
-        // the input data. Useful for embedding literal values, as in
-        // $->echo("give me this string").
-        methods.insert("echo".to_string(), public::echo_method);
-
-        // Returns the type of the data as a string, e.g. "object", "array",
-        // "string", "number", "boolean", or "null". Note that `typeof null` is
-        // "object" in JavaScript but "null" for our purposes.
-        methods.insert("typeof".to_string(), future::typeof_method);
-
-        // When invoked against an array, ->map evaluates its first argument
-        // against each element of the array and returns an array of the
-        // results. When invoked against a non-array, ->map evaluates its first
-        // argument against the data and returns the result.
-        methods.insert("map".to_string(), public::map_method);
-
-        // Returns true if the data is deeply equal to the first argument, false
-        // otherwise. Equality is solely value-based (all JSON), no references.
-        methods.insert("eq".to_string(), future::eq_method);
-
-        // Takes any number of pairs [candidate, value], and returns value for
-        // the first candidate that equals the input data $. If none of the
-        // pairs match, a runtime error is reported, but a single-element
-        // [<default>] array as the final argument guarantees a default value.
-        methods.insert("match".to_string(), public::match_method);
-
-        // Like ->match, but expects the first element of each pair to evaluate
-        // to a boolean, returning the second element of the first pair whose
-        // first element is true. This makes providing a final catch-all case
-        // easy, since the last pair can be [true, <default>].
-        methods.insert("matchIf".to_string(), future::match_if_method);
-        methods.insert("match_if".to_string(), future::match_if_method);
-
-        // Arithmetic methods
-        methods.insert("add".to_string(), future::add_method);
-        methods.insert("sub".to_string(), future::sub_method);
-        methods.insert("mul".to_string(), future::mul_method);
-        methods.insert("div".to_string(), future::div_method);
-        methods.insert("mod".to_string(), future::mod_method);
-
-        // Array/string methods (note that ->has and ->get also work for array
-        // and string indexes)
-        methods.insert("first".to_string(), public::first_method);
-        methods.insert("last".to_string(), public::last_method);
-        methods.insert("slice".to_string(), public::slice_method);
-        methods.insert("size".to_string(), public::size_method);
-
-        // Object methods (note that ->size also works for objects)
-        methods.insert("has".to_string(), future::has_method);
-        methods.insert("get".to_string(), future::get_method);
-        methods.insert("keys".to_string(), future::keys_method);
-        methods.insert("values".to_string(), future::values_method);
-        methods.insert("entries".to_string(), public::entries_method);
-
-        // Logical methods
-        methods.insert("not".to_string(), future::not_method);
-        methods.insert("or".to_string(), future::or_method);
-        methods.insert("and".to_string(), future::and_method);
-
-        methods
-    };
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ArrowMethod {
+    /// This built-in method returns its first input argument as-is, ignoring
+    /// the input data. Useful for embedding literal values, as in
+    /// $->echo("give me this string").
+    Echo,
+    /// When invoked against an array, ->map evaluates its first argument
+    /// against each element of the array and returns an array of the
+    /// results. When invoked against a non-array, ->map evaluates its first
+    /// argument against the data and returns the result.
+    Map,
+    /// Takes any number of pairs [candidate, value], and returns value for
+    /// the first candidate that equals the input data $. If none of the
+    /// pairs match, a runtime error is reported. The pattern [@, value] will always match.
+    Match,
+    /// Get the first element of an array
+    First,
+    /// Get the last element of an array
+    Last,
+    /// Get a subarray of the input array
+    Slice,
+    /// The size of an array or object, as a number
+    Size,
+    /// Returns a list of [{ key, value }, ...] objects for each key-value pair in
+    /// the object. Returning a list of [[ key, value ], ...] pairs might also seem
+    /// like an option, but GraphQL doesn't handle heterogeneous lists (or tuples) as
+    /// well as it handles objects with named properties like { key, value }.
+    Entries,
+    #[cfg(test)]
+    /// Returns the type of the data as a string, e.g. "object", "array",
+    /// "string", "number", "boolean", or "null". Note that `typeof null` is
+    /// "object" in JavaScript but "null" for our purposes.
+    TypeOf,
+    #[cfg(test)]
+    /// Returns true if the data is deeply equal to the first argument, false
+    /// otherwise. Equality is solely value-based (all JSON), no references.
+    Eq,
+    #[cfg(test)]
+    /// Like ->match, but expects the first element of each pair to evaluate
+    /// to a boolean, returning the second element of the first pair whose
+    /// first element is true. This makes providing a final catch-all case
+    /// easy, since the last pair can be [true, <default>].
+    MatchIf,
+    #[cfg(test)]
+    Add,
+    #[cfg(test)]
+    Sub,
+    #[cfg(test)]
+    Mul,
+    #[cfg(test)]
+    Div,
+    #[cfg(test)]
+    Mod,
+    #[cfg(test)]
+    Has,
+    #[cfg(test)]
+    Get,
+    #[cfg(test)]
+    Keys,
+    #[cfg(test)]
+    Values,
+    #[cfg(test)]
+    And,
+    #[cfg(test)]
+    Or,
+    #[cfg(test)]
+    Not,
 }
 
-pub(super) fn lookup_arrow_method(method_name: &str) -> Option<&ArrowMethod> {
-    if cfg!(test) || PUBLIC_ARROW_METHODS.contains(method_name) {
-        ARROW_METHODS.get(method_name)
-    } else {
-        None
+impl ArrowMethod {
+    pub(crate) fn execute(
+        &self, // Method name
+        method_name: &WithRange<String>,
+        // Arguments passed to this method
+        method_args: Option<&MethodArgs>,
+        // The JSON input value (data)
+        data: &JSON,
+        // The variables
+        vars: &VarsWithPathsMap,
+        // The input_path (may contain integers)
+        input_path: &InputPath<JSON>,
+        // The rest of the PathList
+        tail: &WithRange<PathList>,
+    ) -> (Option<JSON>, Vec<ApplyToError>) {
+        match self {
+            ArrowMethod::Echo => {
+                public::echo_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            ArrowMethod::Map => {
+                public::map_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            ArrowMethod::Match => {
+                public::match_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            ArrowMethod::First => {
+                public::first_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            ArrowMethod::Last => {
+                public::last_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            ArrowMethod::Slice => {
+                public::slice_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            ArrowMethod::Size => {
+                public::size_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            ArrowMethod::Entries => {
+                public::entries_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::TypeOf => {
+                future::typeof_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Eq => {
+                future::eq_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::MatchIf => {
+                future::match_if_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Add => {
+                future::add_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Sub => {
+                future::sub_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Mul => {
+                future::mul_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Div => {
+                future::div_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Mod => {
+                future::mod_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Has => {
+                future::has_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Get => {
+                future::get_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Keys => {
+                future::keys_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Values => {
+                future::values_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::And => {
+                future::and_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Or => {
+                future::or_method(method_name, method_args, data, vars, input_path, tail)
+            }
+            #[cfg(test)]
+            ArrowMethod::Not => {
+                future::not_method(method_name, method_args, data, vars, input_path, tail)
+            }
+        }
+    }
+
+    pub(crate) fn lookup(method_name: &str) -> Option<Self> {
+        match method_name {
+            "echo" => Some(ArrowMethod::Echo),
+            "map" => Some(ArrowMethod::Map),
+            "match" => Some(ArrowMethod::Match),
+            "first" => Some(ArrowMethod::First),
+            "last" => Some(ArrowMethod::Last),
+            "slice" => Some(ArrowMethod::Slice),
+            "size" => Some(ArrowMethod::Size),
+            "entries" => Some(ArrowMethod::Entries),
+            #[cfg(test)]
+            "typeof" => Some(ArrowMethod::TypeOf),
+            #[cfg(test)]
+            "eq" => Some(ArrowMethod::Eq),
+            #[cfg(test)]
+            "matchIf" => Some(ArrowMethod::MatchIf),
+            #[cfg(test)]
+            "add" => Some(ArrowMethod::Add),
+            #[cfg(test)]
+            "sub" => Some(ArrowMethod::Sub),
+            #[cfg(test)]
+            "mul" => Some(ArrowMethod::Mul),
+            #[cfg(test)]
+            "div" => Some(ArrowMethod::Div),
+            #[cfg(test)]
+            "mod" => Some(ArrowMethod::Mod),
+            #[cfg(test)]
+            "has" => Some(ArrowMethod::Has),
+            #[cfg(test)]
+            "get" => Some(ArrowMethod::Get),
+            #[cfg(test)]
+            "keys" => Some(ArrowMethod::Keys),
+            _ => None,
+        }
     }
 }
