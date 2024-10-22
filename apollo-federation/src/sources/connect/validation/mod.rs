@@ -546,12 +546,16 @@ pub enum Code {
     UnsupportedVariableType,
     /// A path variable is nullable, which can cause errors at runtime
     NullablePathVariable,
+    /// An extra key on the input wasn't used. Not an error, but might indicate a problem.
+    UnusedValue,
 }
 
 impl Code {
     pub const fn severity(&self) -> Severity {
         match self {
-            Self::NoSourceImport | Self::NullablePathVariable => Severity::Warning,
+            Self::NoSourceImport | Self::NullablePathVariable | Self::UnusedValue => {
+                Severity::Warning
+            }
             _ => Severity::Error,
         }
     }

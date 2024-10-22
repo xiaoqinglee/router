@@ -201,6 +201,7 @@ dependencies = [
  "serde_json",
  "serde_json_bytes",
  "sha1",
+ "spanned_json_parser",
  "strum 0.26.3",
  "strum_macros 0.26.4",
  "tempfile",
@@ -6250,6 +6251,18 @@ dependencies = [
  "serde_json",
  "unicode-id",
  "url",
+]
+
+[[package]]
+name = "spanned_json_parser"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0af7332a71f26f9a5e40501bd3cca40e8c3aff437034109426faf2bd0329f28"
+dependencies = [
+ "bytecount",
+ "memchr",
+ "nom",
+ "serde",
 ]
 
 [[package]]

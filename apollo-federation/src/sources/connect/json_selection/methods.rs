@@ -81,14 +81,11 @@ pub(crate) enum ArrowMethod {
     Get,
     #[cfg(test)]
     Keys,
-    #[cfg(test)]
-    Values,
-    #[cfg(test)]
-    And,
-    #[cfg(test)]
-    Or,
-    #[cfg(test)]
-    Not,
+    // Untested future variants
+    // Values,
+    // And,
+    // Or,
+    // Not,
 }
 
 impl ArrowMethod {
@@ -174,23 +171,19 @@ impl ArrowMethod {
             #[cfg(test)]
             ArrowMethod::Keys => {
                 future::keys_method(method_name, method_args, data, vars, input_path, tail)
-            }
-            #[cfg(test)]
-            ArrowMethod::Values => {
-                future::values_method(method_name, method_args, data, vars, input_path, tail)
-            }
-            #[cfg(test)]
-            ArrowMethod::And => {
-                future::and_method(method_name, method_args, data, vars, input_path, tail)
-            }
-            #[cfg(test)]
-            ArrowMethod::Or => {
-                future::or_method(method_name, method_args, data, vars, input_path, tail)
-            }
-            #[cfg(test)]
-            ArrowMethod::Not => {
-                future::not_method(method_name, method_args, data, vars, input_path, tail)
-            }
+            } // Untested future variants
+              // ArrowMethod::Values => {
+              //     future::values_method(method_name, method_args, data, vars, input_path, tail)
+              // }
+              // ArrowMethod::And => {
+              //     future::and_method(method_name, method_args, data, vars, input_path, tail)
+              // }
+              // ArrowMethod::Or => {
+              //     future::or_method(method_name, method_args, data, vars, input_path, tail)
+              // }
+              // ArrowMethod::Not => {
+              //     future::not_method(method_name, method_args, data, vars, input_path, tail)
+              // }
         }
     }
 

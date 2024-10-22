@@ -18,6 +18,7 @@ use crate::sources::connect::json_selection::NamedSelection;
 use crate::sources::connect::json_selection::PathList;
 use crate::sources::connect::json_selection::Ranged;
 use crate::sources::connect::json_selection::WithRange;
+use crate::sources::connect::validation::mapping::shape::Signature;
 use crate::sources::connect::JSONSelection;
 use crate::sources::connect::Key;
 use crate::sources::connect::PathSelection;
@@ -46,22 +47,24 @@ pub fn validate(
         variables,
     };
 
-    let output_shape = match &parsed {
+    let actual_output_shape = match &parsed {
         JSONSelection::Named(sub_selection) => {
             validator.resolve_sub_selection(sub_selection, &input_shape)
         }
         JSONSelection::Path(PathSelection { path }) => validator.resolve_path(path, &input_shape),
     };
 
-    let actual_output_shape = match output_shape {
+    let actual_output_shape = match actual_output_shape {
         Ok(output_shape) => output_shape,
         Err(messages) => {
             return WithErrors(parsed, messages);
         }
     };
 
-    // TODO: Also return either the required input shape or the unused fields from it
-    // TODO: check actual_output_shape against output_shape
+    let messages = actual_output_shape.check_compatibility_with(output_shape);
+    if !messages.is_empty() {
+        return WithErrors(parsed, messages);
+    }
     Success(parsed)
 }
 
@@ -95,7 +98,7 @@ impl Validator<'_> {
         path: &WithRange<PathList>,
         input_shape: &Shape,
     ) -> Result<Shape, Vec<Message>> {
-        match path.as_ref() {
+        let mut shape = match path.as_ref() {
             PathList::Var(variable, tail) => {
                 match variable.as_ref() {
                     KnownVariable::This | KnownVariable::Args | KnownVariable::Config => {
@@ -122,48 +125,55 @@ impl Validator<'_> {
                 self.resolve_path(tail, &shape)
             }
             PathList::Expr(expr, tail) => {
-                let shape = self.resolve_literal(input_shape, expr.as_ref())?;
+                let shape = self.resolve_literal(input_shape, expr)?;
                 self.resolve_path(tail, &shape)
             }
             PathList::Method(name, args, tail) => {
                 let shape = self.resolve_method(input_shape, name, args.clone())?;
                 self.resolve_path(tail, &shape)
             }
-            PathList::Selection(_) => {
-                // TODO:
-                Ok(Shape::Any)
+            PathList::Selection(sub_selection) => {
+                let shape = self.resolve_sub_selection(sub_selection, input_shape)?;
+                Ok(shape)
             }
             PathList::Empty => Ok(input_shape.clone()),
-        }
+        }?;
+        shape.source_locations = self.location(path);
+        Ok(shape)
     }
 
-    fn resolve_literal(&self, input_shape: &Shape, lit: &LitExpr) -> Result<Shape, Vec<Message>> {
-        match lit {
-            LitExpr::String(_) => Ok(Shape::String),
-            LitExpr::Number(_) => Ok(Shape::Number),
-            LitExpr::Bool(_) => Ok(Shape::Bool),
-            LitExpr::Null => Ok(Shape::Nullable(Box::new(Shape::Any))),
+    fn resolve_literal(
+        &self,
+        input_shape: &Shape,
+        lit: &WithRange<LitExpr>,
+    ) -> Result<Shape, Vec<Message>> {
+        let signature = match lit.as_ref() {
+            LitExpr::String(_) => Signature::String,
+            LitExpr::Number(_) => Signature::Number,
+            LitExpr::Bool(_) => Signature::Bool,
+            LitExpr::Null => Signature::Nullable(Box::new(Signature::Any)),
             LitExpr::Object(attributes) => {
                 let mut inner =
                     IndexMap::with_capacity_and_hasher(attributes.len(), Default::default());
                 for (key, value) in attributes {
-                    inner.insert(
-                        key.as_string(),
-                        self.resolve_literal(input_shape, value.as_ref())?,
-                    );
+                    inner.insert(key.as_string(), self.resolve_literal(input_shape, value)?);
                 }
-                Ok(Shape::Object(inner))
+                Signature::Object(inner)
             }
             LitExpr::Array(inner) => {
-                let mut inner_shape = Shape::Any;
+                let mut signature = Signature::Any;
                 for expr in inner {
-                    inner_shape =
-                        inner_shape.merge(self.resolve_literal(input_shape, expr.as_ref())?);
+                    signature = signature.merge(self.resolve_literal(input_shape, expr)?.signature);
                 }
-                Ok(Shape::Array(Box::new(inner_shape)))
+                Signature::Array(Box::new(signature))
             }
-            LitExpr::Path(PathSelection { path }) => self.resolve_path(path, input_shape),
-        }
+            LitExpr::Path(PathSelection { path }) => return self.resolve_path(path, input_shape),
+        };
+        Ok(Shape {
+            signature,
+            source_locations: vec![],
+            mapping_locations: self.location(lit),
+        })
     }
 
     fn resolve_method(
@@ -207,16 +217,15 @@ impl Validator<'_> {
         match method {
             ArrowMethod::Echo => {
                 let arg = require_one_arg(args)?;
-                self.resolve_literal(input_shape, arg.as_ref())
+                self.resolve_literal(input_shape, &arg)
             }
             ArrowMethod::Map => {
                 let arg = require_one_arg(args)?;
-                let inner_shape = self.resolve_literal(input_shape, arg.as_ref())?;
-                if let Shape::Array(_) = input_shape {
-                    Ok(Shape::Array(Box::new(inner_shape)))
-                } else {
-                    Ok(inner_shape)
+                let mut inner_shape = self.resolve_literal(input_shape, &arg)?;
+                if let Signature::Array(_) = input_shape.signature {
+                    inner_shape.signature = Signature::Array(Box::new(inner_shape.signature));
                 }
+                Ok(inner_shape)
             }
             ArrowMethod::First | ArrowMethod::Last => {
                 if let Some(args) = args {
@@ -226,10 +235,13 @@ impl Validator<'_> {
                         locations: self.location(&args),
                     }]);
                 }
-                match input_shape {
-                    Shape::Array(inner) => Ok(*inner.clone()),
-                    Shape::String => Ok(Shape::String),
-                    Shape::Any => Ok(Shape::Any),
+                match &input_shape.signature {
+                    Signature::Array(inner) => {
+                        let mut shape = input_shape.clone();
+                        shape.signature = *inner.clone();
+                        Ok(shape)
+                    }
+                    Signature::Any | Signature::String => Ok(input_shape.clone()),
                     _ => Err(vec![Message {
                         code: Code::InvalidJsonSelection,
                         message: format!(
@@ -241,10 +253,9 @@ impl Validator<'_> {
                 }
             }
             ArrowMethod::Slice => {
-                match input_shape {
-                    Shape::Array(_) => Ok(input_shape.clone()),
-                    Shape::String => Ok(Shape::String),
-                    Shape::Any => Ok(Shape::Any),
+                match &input_shape.signature {
+                    Signature::Array(_) => Ok(input_shape.clone()),
+                    Signature::Any | Signature::String => Ok(input_shape.clone()),
                     _ => Err(vec![Message {
                         code: Code::InvalidJsonSelection,
                         message: format!(
@@ -256,8 +267,12 @@ impl Validator<'_> {
                 }
                 // TODO: check arguments
             }
-            ArrowMethod::Size => match input_shape {
-                Shape::Array(_) | Shape::Object(_) | Shape::Any => Ok(Shape::Number),
+            ArrowMethod::Size => match &input_shape.signature {
+                Signature::Array(_) | Signature::Object(_) | Signature::Any => Ok(Shape {
+                    signature: Signature::Number,
+                    source_locations: Vec::new(),
+                    mapping_locations: self.location(name),
+                }),
                 _ => Err(vec![Message {
                     code: Code::InvalidJsonSelection,
                     message: format!(
@@ -279,7 +294,11 @@ impl Validator<'_> {
                         locations: self.location(&arg),
                     }]);
                 };
-                let mut shape = Shape::Any;
+                let mut shape = Shape {
+                    signature: Signature::Any,
+                    source_locations: input_shape.source_locations.clone(),
+                    mapping_locations: self.location(&arg),
+                };
                 if cases.is_empty() {
                     return Err(vec![Message {
                         code: Code::InvalidJsonSelection,
@@ -323,9 +342,13 @@ impl Validator<'_> {
                         locations: self.location(&args),
                     }]);
                 }
-                match input_shape {
+                match &input_shape.signature {
                     // TODO: better types
-                    Shape::Object(_) | Shape::Any => Ok(Shape::Array(Box::new(Shape::Any))),
+                    Signature::Object(_) | Signature::Any => Ok(Shape {
+                        signature: Signature::Array(Box::new(Signature::Any)),
+                        source_locations: input_shape.source_locations.clone(),
+                        mapping_locations: self.location(name),
+                    }),
                     _ => Err(vec![Message {
                         code: Code::InvalidJsonSelection,
                         message: format!(
@@ -380,22 +403,6 @@ impl Validator<'_> {
             ArrowMethod::Keys => {
                 todo!("Implement Keys method")
             }
-            #[cfg(test)]
-            ArrowMethod::Values => {
-                todo!("Implement Values method")
-            }
-            #[cfg(test)]
-            ArrowMethod::And => {
-                todo!("Implement And method")
-            }
-            #[cfg(test)]
-            ArrowMethod::Or => {
-                todo!("Implement Or method")
-            }
-            #[cfg(test)]
-            ArrowMethod::Not => {
-                todo!("Implement Not method")
-            }
         }
     }
 
@@ -418,7 +425,11 @@ impl Validator<'_> {
             }
         }
         if messages.is_empty() {
-            Ok(Shape::Object(output_attributes))
+            Ok(Shape {
+                signature: Signature::Object(output_attributes),
+                source_locations: input_shape.source_locations.clone(),
+                mapping_locations: self.location(sub_selection),
+            })
         } else {
             Err(messages)
         }
@@ -452,9 +463,9 @@ impl Validator<'_> {
                     Ok(vec![(field_name, shape)])
                 } else {
                     let shape = self.resolve_path(path, input_shape)?;
-                    match shape {
-                        Shape::Any => Ok(Vec::new()),
-                        Shape::Object(attributes_to_flatten) => {
+                    match shape.signature {
+                        Signature::Any => Ok(Vec::new()),
+                        Signature::Object(attributes_to_flatten) => {
                             Ok(attributes_to_flatten.into_iter().collect())
                         }
                         // In practice, this should be caught by the parser, but we have no way to guarantee that yet
