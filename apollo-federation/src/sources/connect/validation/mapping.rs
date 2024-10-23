@@ -64,9 +64,10 @@ impl DiagnosticWithUrl {
 fn diagnostics_to_map(diagnostics: Vec<DiagnosticWithUrl>) -> HashMap<Url, Vec<Diagnostic>> {
     let mut map = HashMap::with_capacity(4);
     for diagnostic in diagnostics {
-        map.entry(diagnostic.url)
-            .or_insert_with(Vec::new)
-            .push(diagnostic.diagnostic);
+        let vec = map.entry(diagnostic.url).or_insert_with(Vec::new);
+        if !vec.contains(&diagnostic.diagnostic) {
+            vec.push(diagnostic.diagnostic);
+        }
     }
     map
 }
