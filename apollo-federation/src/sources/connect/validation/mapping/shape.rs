@@ -122,7 +122,7 @@ impl Shape {
                     .map(|location| {
                         DiagnosticWithUrl::new(
                             location.clone(),
-                            format!("Key `{key}` not found in {self}."),
+                            format!("Key `{key}` not found."),
                             DiagnosticSeverity::ERROR,
                         )
                     })
