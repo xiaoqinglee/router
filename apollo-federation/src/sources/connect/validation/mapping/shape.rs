@@ -247,6 +247,14 @@ impl Shape {
                 .for_each(|inner| inner.replace_locations(locations.clone())),
         }
     }
+
+    pub(super) fn is_array(&self) -> bool {
+        match self {
+            Self::Array { .. } => true,
+            Self::Union(inners) => inners.iter().all(Self::is_array),
+            _ => false,
+        }
+    }
 }
 
 impl From<&serde_json_bytes::Value> for Shape {

@@ -159,7 +159,10 @@ impl Validator<'_> {
                 }
             }
             PathList::Key(key, tail) => {
-                let shape = self.get_key(input_shape, key).map_err(|diag| vec![diag])?;
+                let shape = arrayify(
+                    input_shape,
+                    self.get_key(input_shape, key).map_err(|diag| vec![diag])?,
+                );
                 self.resolve_path(tail, &shape)
             }
             PathList::Expr(expr, tail) => {
@@ -490,14 +493,17 @@ impl Validator<'_> {
             }
         }
         if diagnostics.is_empty() {
-            Ok(Shape::Object {
-                attributes,
-                locations: input_shape
-                    .locations()
-                    .into_iter()
-                    .chain(once(self.location(sub_selection)))
-                    .collect(),
-            })
+            Ok(arrayify(
+                input_shape,
+                Shape::Object {
+                    attributes,
+                    locations: input_shape
+                        .locations()
+                        .into_iter()
+                        .chain(once(self.location(sub_selection)))
+                        .collect(),
+                },
+            ))
         } else {
             Err(diagnostics)
         }
@@ -550,10 +556,30 @@ impl Validator<'_> {
     }
 
     fn get_key(&self, input_shape: &Shape, key: &WithRange<Key>) -> Result<Shape, Diagnostic> {
-        input_shape.get_key(key.as_str()).map_err(|mut diagnostic| {
-            diagnostic.locations.push(self.location(key));
-            diagnostic
-        })
+        input_shape
+            .get_key(key.as_str())
+            .map_err(|mut diagnostic| {
+                diagnostic.locations.push(self.location(key));
+                diagnostic
+            })
+            .map(|mut shape| {
+                shape.add_location(self.location(key));
+                shape
+            })
+    }
+}
+
+/// In some, but not all cases, JSONSelection magically makes the output an array if the input
+/// was an array. Like, getting the key of an array of object results in an array of values.
+/// This handles that.
+fn arrayify(input_shape: &Shape, result_shape: Shape) -> Shape {
+    if input_shape.is_array() && !result_shape.is_array() {
+        Shape::Array {
+            locations: result_shape.locations(),
+            inner: Box::new(result_shape),
+        }
+    } else {
+        result_shape
     }
 }
 
