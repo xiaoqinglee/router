@@ -1,18 +1,14 @@
 mod shape;
 
-use std::collections::HashMap;
 use std::iter::once;
+use std::ops::Range;
 
 use apollo_compiler::collections::IndexMap;
+use apollo_compiler::parser::LineColumn;
 use line_col::LineColLookup;
-use lsp_types::Diagnostic;
-use lsp_types::DiagnosticSeverity;
-use lsp_types::Location;
-use lsp_types::Position;
-use lsp_types::Range;
-use url::Url;
 
 pub use self::shape::Shape;
+use super::Severity;
 use crate::sources::connect::json_selection::ArrowMethod;
 use crate::sources::connect::json_selection::KnownVariable;
 use crate::sources::connect::json_selection::LitExpr;
@@ -27,49 +23,53 @@ use crate::sources::connect::PathSelection;
 use crate::sources::connect::SubSelection;
 
 pub struct Document<'a> {
-    pub url: Url,
+    pub name: String,
     pub content: &'a str,
 }
 
-/// A diagnostic for a particular File
-struct DiagnosticWithUrl {
-    pub(self) url: Url,
-    pub(self) diagnostic: Diagnostic,
+// TODO: merge this with `Message` used by other validations
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Diagnostic {
+    pub message: String,
+    pub locations: Vec<Location>,
+    pub severity: Severity,
 }
 
-impl DiagnosticWithUrl {
-    fn new(location: Location, message: String, severity: DiagnosticSeverity) -> Self {
+impl Diagnostic {
+    fn new(location: Location, message: String, severity: Severity) -> Self {
         Self {
-            url: location.uri,
-            diagnostic: Diagnostic {
-                range: location.range,
-                severity: Some(severity),
-                message,
-                ..Default::default()
-            },
+            message,
+            locations: vec![location],
+            severity,
         }
     }
 
-    fn for_locations(
-        locations: impl Iterator<Item = Location>,
-        message: String,
-        severity: DiagnosticSeverity,
-    ) -> Vec<Self> {
-        locations
-            .map(|location| Self::new(location, message.clone(), severity))
-            .collect()
+    fn for_locations<I>(locations: I, message: String, severity: Severity) -> Self
+    where
+        I: IntoIterator<Item = Location>,
+    {
+        Self {
+            message,
+            locations: locations.into_iter().collect(),
+            severity,
+        }
+    }
+
+    pub fn new_simple(document: String, range: Option<Range<LineColumn>>, message: String) -> Self {
+        Self {
+            message,
+            locations: vec![Location { document, range }],
+            severity: Severity::Error,
+        }
     }
 }
 
-fn diagnostics_to_map(diagnostics: Vec<DiagnosticWithUrl>) -> HashMap<Url, Vec<Diagnostic>> {
-    let mut map = HashMap::with_capacity(4);
-    for diagnostic in diagnostics {
-        let vec = map.entry(diagnostic.url).or_insert_with(Vec::new);
-        if !vec.contains(&diagnostic.diagnostic) {
-            vec.push(diagnostic.diagnostic);
-        }
-    }
-    map
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Location {
+    /// An arbitrary identifier for which file the range is associated with
+    pub document: String,
+    /// 1-indexed, end-exclusive range within `file` (if any)
+    pub range: Option<Range<LineColumn>>,
 }
 
 pub fn validate(
@@ -77,24 +77,20 @@ pub fn validate(
     mapping: Document,
     output_shape: Shape,
     variables: IndexMap<String, Shape>,
-) -> (Option<JSONSelection>, HashMap<Url, Vec<Diagnostic>>) {
+) -> (Option<JSONSelection>, Vec<Diagnostic>) {
     let line_col = LineColLookup::new(mapping.content);
     let parsed = match JSONSelection::parse(mapping.content) {
         Ok((_, parsed)) => parsed,
         Err(err) => {
-            let diagnostic = Diagnostic::new_simple(Range::default(), err.to_string());
-            let diagnostic = DiagnosticWithUrl {
-                url: mapping.url,
-                diagnostic,
-            };
-            return (None, diagnostics_to_map(vec![diagnostic]));
+            let diagnostic = Diagnostic::new_simple(mapping.name, None, err.to_string());
+            return (None, vec![diagnostic]);
         }
     };
 
     let validator = Validator {
         line_col,
         variables,
-        mapping_url: mapping.url,
+        mapping_name: mapping.name,
     };
 
     let actual_output_shape = match &parsed {
@@ -106,40 +102,31 @@ pub fn validate(
 
     let actual_output_shape = match actual_output_shape {
         Ok(output_shape) => output_shape,
-        Err(messages) => return (Some(parsed), diagnostics_to_map(messages)),
+        Err(diagnostics) => return (Some(parsed), diagnostics),
     };
 
     let diagnostics = actual_output_shape.check_compatibility_with(output_shape);
-    (Some(parsed), diagnostics_to_map(diagnostics))
+    (Some(parsed), diagnostics)
 }
 
 struct Validator<'a> {
     line_col: LineColLookup<'a>,
-    mapping_url: Url,
+    mapping_name: String,
     variables: IndexMap<String, Shape>,
 }
 
 impl Validator<'_> {
     pub(crate) fn location<T>(&self, ranged: &impl Ranged<T>) -> Location {
-        let range = ranged
-            .range()
-            .map(|range| {
-                let (line, column) = self.line_col.get(range.start);
-                let start = Position {
-                    line: (line - 1) as u32,
-                    character: (column - 1) as u32,
-                };
-                let (line, column) = self.line_col.get(range.end);
-                let end = Position {
-                    line: (line - 1) as u32,
-                    character: (column - 1) as u32,
-                };
-                Range { start, end }
-            })
-            .unwrap_or_default();
+        let range = ranged.range().map(|range| {
+            let (line, column) = self.line_col.get(range.start);
+            let start = LineColumn { line, column };
+            let (line, column) = self.line_col.get(range.end);
+            let end = LineColumn { line, column };
+            start..end
+        });
 
         Location {
-            uri: self.mapping_url.clone(),
+            document: self.mapping_name.clone(),
             range,
         }
     }
@@ -148,19 +135,19 @@ impl Validator<'_> {
         &self,
         path: &WithRange<PathList>,
         input_shape: &Shape,
-    ) -> Result<Shape, Vec<DiagnosticWithUrl>> {
+    ) -> Result<Shape, Vec<Diagnostic>> {
         let shape = match path.as_ref() {
             PathList::Var(variable, tail) => {
                 match variable.as_ref() {
                     KnownVariable::This | KnownVariable::Args | KnownVariable::Config => {
                         let Some(var_shape) = self.variables.get(variable.as_str()) else {
-                            return Err(vec![DiagnosticWithUrl::new(
+                            return Err(vec![Diagnostic::new(
                                 self.location(variable),
                                 format!(
                                     "Variable `{variable}` was not set.",
                                     variable = variable.as_str()
                                 ),
-                                DiagnosticSeverity::ERROR,
+                                Severity::Error,
                             )]);
                         };
                         self.resolve_path(tail, var_shape)
@@ -172,7 +159,7 @@ impl Validator<'_> {
                 }
             }
             PathList::Key(key, tail) => {
-                let shape = self.get_key(input_shape, key)?;
+                let shape = self.get_key(input_shape, key).map_err(|diag| vec![diag])?;
                 self.resolve_path(tail, &shape)
             }
             PathList::Expr(expr, tail) => {
@@ -197,7 +184,7 @@ impl Validator<'_> {
         &self,
         input_shape: &Shape,
         lit: &WithRange<LitExpr>,
-    ) -> Result<Shape, Vec<DiagnosticWithUrl>> {
+    ) -> Result<Shape, Vec<Diagnostic>> {
         let locations = vec![self.location(lit)];
         match lit.as_ref() {
             LitExpr::String(_) => Ok(Shape::String(locations)),
@@ -234,34 +221,34 @@ impl Validator<'_> {
         input_shape: &Shape,
         name: &WithRange<String>,
         args: Option<MethodArgs>,
-    ) -> Result<Shape, Vec<DiagnosticWithUrl>> {
+    ) -> Result<Shape, Vec<Diagnostic>> {
         let Some(method) = ArrowMethod::lookup(name.as_str()) else {
-            return Err(vec![DiagnosticWithUrl::new(
+            return Err(vec![Diagnostic::new(
                 self.location(name),
                 format!("Method `{name}` not found.", name = name.as_str()),
-                DiagnosticSeverity::ERROR,
+                Severity::Error,
             )]);
         };
         let args = args;
         let require_one_arg = |args: Option<MethodArgs>| {
             let Some(args) = args else {
-                return Err(vec![DiagnosticWithUrl::new(
+                return Err(vec![Diagnostic::new(
                     self.location(name),
                     format!(
                         "`->{method}` requires exactly one argument.",
                         method = name.as_str()
                     ),
-                    DiagnosticSeverity::ERROR,
+                    Severity::Error,
                 )]);
             };
             if args.args.len() != 1 {
-                return Err(vec![DiagnosticWithUrl::new(
+                return Err(vec![Diagnostic::new(
                     self.location(&args),
                     format!(
                         "`->{method}` requires exactly one argument.",
                         method = name.as_str()
                     ),
-                    DiagnosticSeverity::ERROR,
+                    Severity::Error,
                 )]);
             }
             Ok(args.args.into_iter().next().unwrap())
@@ -289,10 +276,10 @@ impl Validator<'_> {
             }
             ArrowMethod::First | ArrowMethod::Last => {
                 if let Some(args) = args {
-                    return Err(vec![DiagnosticWithUrl::new(
+                    return Err(vec![Diagnostic::new(
                         self.location(&args),
                         format!("`->{name}` takes no arguments.", name = name.as_str()),
-                        DiagnosticSeverity::ERROR,
+                        Severity::Error,
                     )]);
                 }
                 match &input_shape {
@@ -307,13 +294,13 @@ impl Validator<'_> {
                         .into_iter()
                         .chain(once(self.location(name)))
                         .map(|location| {
-                            DiagnosticWithUrl::new(
+                            Diagnostic::new(
                                 location,
                                 format!(
                                     "`->{name}` can only be applied to an array or string.",
                                     name = name.as_str()
                                 ),
-                                DiagnosticSeverity::ERROR,
+                                Severity::Error,
                             )
                         })
                         .collect()),
@@ -323,7 +310,7 @@ impl Validator<'_> {
                 match &input_shape {
                     Shape::Array { .. } => Ok(input_shape.clone()),
                     Shape::Any(_) | Shape::String(_) => Ok(input_shape.clone()),
-                    _ => Err(DiagnosticWithUrl::for_locations(
+                    _ => Err(vec![Diagnostic::for_locations(
                         input_shape
                             .locations()
                             .into_iter()
@@ -332,8 +319,8 @@ impl Validator<'_> {
                             "`->{name}` can only be applied to an array or string.",
                             name = name.as_str()
                         ),
-                        DiagnosticSeverity::ERROR,
-                    )),
+                        Severity::Error,
+                    )]),
                 }
                 // TODO: check arguments
             }
@@ -346,60 +333,60 @@ impl Validator<'_> {
                     Shape::Array { .. } | Shape::Object { .. } | Shape::Any(_) => {
                         Ok(Shape::Number(locations.collect()))
                     }
-                    _ => Err(DiagnosticWithUrl::for_locations(
+                    _ => Err(vec![Diagnostic::for_locations(
                         locations,
                         format!(
                             "`->{name}` can only be applied to an array or object.",
                             name = name.as_str()
                         ),
-                        DiagnosticSeverity::ERROR,
-                    )),
+                        Severity::Error,
+                    )]),
                 }
             }
             ArrowMethod::Match => {
                 let arg = require_one_arg(args)?;
                 let LitExpr::Array(cases) = arg.as_ref() else {
-                    return Err(vec![DiagnosticWithUrl::new(
+                    return Err(vec![Diagnostic::new(
                         self.location(&arg),
                         format!(
                             "`->{name}` requires an array of pairs.",
                             name = name.as_str()
                         ),
-                        DiagnosticSeverity::ERROR,
+                        Severity::Error,
                     )]);
                 };
                 let mut locations = input_shape.locations();
                 locations.push(self.location(name));
                 if cases.is_empty() {
-                    return Err(DiagnosticWithUrl::for_locations(
+                    return Err(vec![Diagnostic::for_locations(
                         locations.into_iter(),
                         format!(
                             "`->{name}` requires at least one pair.",
                             name = name.as_str()
                         ),
-                        DiagnosticSeverity::ERROR,
-                    ));
+                        Severity::Error,
+                    )]);
                 }
                 let mut shape = Shape::Any(locations);
                 for case in cases {
                     let LitExpr::Array(case_pair) = case.as_ref() else {
-                        return Err(vec![DiagnosticWithUrl::new(
+                        return Err(vec![Diagnostic::new(
                             self.location(case),
                             format!(
                                 "`->{name}` requires an array of pairs.",
                                 name = name.as_str()
                             ),
-                            DiagnosticSeverity::ERROR,
+                            Severity::Error,
                         )]);
                     };
                     if case_pair.len() != 2 {
-                        return Err(vec![DiagnosticWithUrl::new(
+                        return Err(vec![Diagnostic::new(
                             self.location(case),
                             format!(
                                 "`->{name}` requires an array of pairs.",
                                 name = name.as_str()
                             ),
-                            DiagnosticSeverity::ERROR,
+                            Severity::Error,
                         )]);
                     }
                     shape = shape.merge(self.resolve_literal(input_shape, &case_pair[1])?);
@@ -408,10 +395,10 @@ impl Validator<'_> {
             }
             ArrowMethod::Entries => {
                 if let Some(args) = args {
-                    return Err(vec![DiagnosticWithUrl::new(
+                    return Err(vec![Diagnostic::new(
                         self.location(&args),
                         format!("`->{name}` takes no arguments.", name = name.as_str()),
-                        DiagnosticSeverity::ERROR,
+                        Severity::Error,
                     )]);
                 }
                 match &input_shape {
@@ -424,7 +411,7 @@ impl Validator<'_> {
                             .collect(),
                         inner: Box::new(Shape::Any(vec![self.location(name)])),
                     }),
-                    _ => Err(DiagnosticWithUrl::for_locations(
+                    _ => Err(vec![Diagnostic::for_locations(
                         input_shape
                             .locations()
                             .into_iter()
@@ -433,8 +420,8 @@ impl Validator<'_> {
                             "`->{name}` can only be applied to an object.",
                             name = name.as_str()
                         ),
-                        DiagnosticSeverity::ERROR,
-                    )),
+                        Severity::Error,
+                    )]),
                 }
             }
             #[cfg(test)]
@@ -488,7 +475,7 @@ impl Validator<'_> {
         &self,
         sub_selection: &SubSelection,
         input_shape: &Shape,
-    ) -> Result<Shape, Vec<DiagnosticWithUrl>> {
+    ) -> Result<Shape, Vec<Diagnostic>> {
         let mut attributes =
             IndexMap::with_capacity_and_hasher(sub_selection.selections.len(), Default::default());
         let mut diagnostics = Vec::new();
@@ -520,14 +507,14 @@ impl Validator<'_> {
         &self,
         named_selection: &NamedSelection,
         input_shape: &Shape,
-    ) -> Result<Vec<(String, Shape)>, Vec<DiagnosticWithUrl>> {
+    ) -> Result<Vec<(String, Shape)>, Vec<Diagnostic>> {
         match named_selection {
             NamedSelection::Group(alias, sub_selection) => {
                 let output_shape = self.resolve_sub_selection(sub_selection, input_shape)?;
                 Ok(vec![(alias.name().to_string(), output_shape)])
             }
             NamedSelection::Field(alias, key, sub_selection) => {
-                let mut shape = self.get_key(input_shape, key)?;
+                let mut shape = self.get_key(input_shape, key).map_err(|diag| vec![diag])?;
                 let field_name = alias
                     .as_ref()
                     .map(|alias| alias.name().to_string())
@@ -548,42 +535,25 @@ impl Validator<'_> {
                         Shape::Any(_) => Ok(Vec::new()),
                         Shape::Object { attributes, .. } => Ok(attributes.into_iter().collect()),
                         // In practice, this should be caught by the parser, but we have no way to guarantee that yet
-                        other => Err(DiagnosticWithUrl::for_locations(
+                        other => Err(vec![Diagnostic::for_locations(
                             other
                                 .locations()
                                 .into_iter()
                                 .chain(once(self.location(path))),
                             format!("Expected an object, got {other:?}.", other = other),
-                            DiagnosticSeverity::ERROR,
-                        )),
+                            Severity::Error,
+                        )]),
                     }
                 }
             }
         }
     }
 
-    fn get_key(
-        &self,
-        input_shape: &Shape,
-        key: &WithRange<Key>,
-    ) -> Result<Shape, Vec<DiagnosticWithUrl>> {
-        input_shape
-            .get_key(key.as_str())
-            .map_err(|mut diagnostics| {
-                let diagnostics_for_mapping: Vec<_> = diagnostics
-                    .iter()
-                    .map(|diagnostic| diagnostic.diagnostic.message.clone())
-                    .map(|message| {
-                        DiagnosticWithUrl::new(
-                            self.location(key),
-                            message,
-                            DiagnosticSeverity::ERROR,
-                        )
-                    })
-                    .collect();
-                diagnostics.extend(diagnostics_for_mapping);
-                diagnostics
-            })
+    fn get_key(&self, input_shape: &Shape, key: &WithRange<Key>) -> Result<Shape, Diagnostic> {
+        input_shape.get_key(key.as_str()).map_err(|mut diagnostic| {
+            diagnostic.locations.push(self.location(key));
+            diagnostic
+        })
     }
 }
 
@@ -597,7 +567,7 @@ mod tests {
     #[test]
     fn denest_with_sub_selection() {
         let mapping = Document {
-            url: Url::parse("file:///path/to/mapping").unwrap(),
+            name: "mapping".to_string(),
             content: "$.object.nested { first second } another",
         };
         let input_shape =
@@ -606,7 +576,7 @@ mod tests {
         let variables = IndexMap::default();
         assert_eq!(
             validate(input_shape, mapping, output_shape, variables).1,
-            HashMap::new()
+            Vec::new(),
         );
     }
 }

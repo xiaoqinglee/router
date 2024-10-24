@@ -47,8 +47,10 @@ use coordinates::source_http_argument_coordinate;
 use extended_type::validate_extended_type;
 use itertools::Itertools;
 pub use mapping::validate as validate_mapping;
+pub use mapping::Diagnostic;
 pub use mapping::Document;
-pub use mapping::Shape as MappingShape;
+pub use mapping::Location;
+pub use mapping::Shape;
 use source_name::SourceName;
 use url::Url;
 

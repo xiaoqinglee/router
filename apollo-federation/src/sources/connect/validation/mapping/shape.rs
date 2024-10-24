@@ -1,15 +1,14 @@
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::ops::Range;
 
 use apollo_compiler::collections::IndexMap;
+use apollo_compiler::parser::LineColumn;
 use itertools::Itertools;
-use lsp_types::DiagnosticSeverity;
-use lsp_types::Location;
-use lsp_types::Position;
-use lsp_types::Range;
-use url::Url;
 
-use super::DiagnosticWithUrl;
+use super::Diagnostic;
+use super::Location;
+use crate::sources::connect::validation::Severity;
 
 type Locations = Vec<Location>;
 
@@ -97,36 +96,26 @@ impl Shape {
         }
     }
 
-    pub(super) fn get_key(&self, key: &str) -> Result<Self, Vec<DiagnosticWithUrl>> {
+    pub(super) fn get_key(&self, key: &str) -> Result<Self, Diagnostic> {
         match self {
             Self::Any(_) => Ok(self.clone()),
             Self::Bool(locations) | Self::Number(locations) | Self::String(locations) => {
-                Err(locations
-                    .iter()
-                    .map(|location| {
-                        DiagnosticWithUrl::new(
-                            location.clone(),
-                            format!("Can't get key `{key}` from a {self}."),
-                            DiagnosticSeverity::ERROR,
-                        )
-                    })
-                    .collect())
+                Err(Diagnostic::for_locations(
+                    locations.iter().cloned(),
+                    format!("Can't get key `{key}` from a {self}."),
+                    Severity::Error,
+                ))
             }
             Self::Array { inner, .. } => inner.get_key(key),
             Self::Object {
                 attributes,
                 locations,
             } => attributes.get(key).cloned().ok_or_else(|| {
-                locations
-                    .iter()
-                    .map(|location| {
-                        DiagnosticWithUrl::new(
-                            location.clone(),
-                            format!("Key `{key}` not found."),
-                            DiagnosticSeverity::ERROR,
-                        )
-                    })
-                    .collect()
+                Diagnostic::for_locations(
+                    locations.iter().cloned(),
+                    format!("Key `{key}` not found."),
+                    Severity::Error,
+                )
             }),
             Self::Nullable(inner) => inner.get_key(key),
             Self::Union(inners) => {
@@ -142,7 +131,7 @@ impl Shape {
         }
     }
 
-    pub(super) fn check_compatibility_with(self, other: Self) -> Vec<DiagnosticWithUrl> {
+    pub(super) fn check_compatibility_with(self, other: Self) -> Vec<Diagnostic> {
         use Shape::*;
         match (self, other) {
             (Any(_), _)
@@ -174,50 +163,39 @@ impl Shape {
                         diagnostics.extend(
                             value.check_compatibility_with(other_value).into_iter().map(
                                 |mut diagnostic| {
-                                    diagnostic.diagnostic.message = format!(
+                                    diagnostic.message = format!(
                                         "Key `{key}`: {message}",
-                                        message = diagnostic.diagnostic.message
+                                        message = diagnostic.message
                                     );
                                     diagnostic
                                 },
                             ),
                         );
                     } else {
-                        diagnostics.extend(value.locations().iter().map(|location| {
-                            DiagnosticWithUrl::new(
-                                location.clone(),
-                                format!("Extra key `{key}` found, but not required."),
-                                DiagnosticSeverity::WARNING,
-                            )
-                        }));
+                        diagnostics.push(Diagnostic::for_locations(
+                            value.locations(),
+                            format!("Extra key `{key}` found, but not required."),
+                            Severity::Warning,
+                        ));
                     }
                 }
                 for (key, value) in other_attributes {
-                    diagnostics.extend(value.locations().iter().map(|location| {
-                        DiagnosticWithUrl::new(
-                            location.clone(),
-                            format!("Expected key `{key}` not found."),
-                            DiagnosticSeverity::ERROR,
-                        )
-                    }));
+                    diagnostics.push(Diagnostic::for_locations(
+                        value.locations(),
+                        format!("Expected key `{key}` not found."),
+                        Severity::Error,
+                    ));
                 }
                 diagnostics
             }
             (Nullable(inner), other) | (other, Nullable(inner)) => {
                 inner.check_compatibility_with(other)
             }
-            (actual, expected) => actual
-                .locations()
-                .into_iter()
-                .chain(expected.locations())
-                .map(|location| {
-                    DiagnosticWithUrl::new(
-                        location,
-                        format!("Expected {expected}, found {actual}."),
-                        DiagnosticSeverity::ERROR,
-                    )
-                })
-                .collect(),
+            (actual, expected) => vec![Diagnostic::for_locations(
+                actual.locations().into_iter().chain(expected.locations()),
+                format!("Expected {expected}, found {actual}."),
+                Severity::Error,
+            )],
         }
     }
 
@@ -306,21 +284,21 @@ impl From<&serde_json_bytes::Value> for Shape {
 }
 
 impl Shape {
-    pub fn from_json(url: Url, value: spanned_json_parser::SpannedValue) -> Self {
+    pub fn from_json(document_name: String, value: spanned_json_parser::SpannedValue) -> Self {
         use spanned_json_parser::Value::*;
         let location = Location {
-            uri: url.clone(),
-            range: Range {
-                start: Position {
-                    line: (value.start.line - 1) as u32,
-                    character: (value.start.col - 1) as u32,
+            document: document_name.clone(),
+            range: Some(Range {
+                start: LineColumn {
+                    line: value.start.line,
+                    column: value.start.col,
                 },
-                end: Position {
-                    line: (value.end.line - 1) as u32,
-                    // Their end col is actually already off by one since it's inclusive not exclusive
-                    character: value.end.col as u32,
+                end: LineColumn {
+                    line: value.end.line,
+                    // Their end col is actually off by one since it's inclusive not exclusive
+                    column: value.end.col + 1,
                 },
-            },
+            }),
         };
         let locations = vec![location];
         match value.value {
@@ -331,7 +309,7 @@ impl Shape {
             Array(values) => {
                 let mut inner = Self::Any(Vec::new());
                 for value in values {
-                    inner = inner.merge(Self::from_json(url.clone(), value));
+                    inner = inner.merge(Self::from_json(document_name.clone(), value));
                 }
                 Self::Array {
                     inner: Box::new(inner),
@@ -342,7 +320,7 @@ impl Shape {
                 let mut attributes =
                     IndexMap::with_capacity_and_hasher(object.len(), Default::default());
                 for (key, value) in object {
-                    attributes.insert(key, Shape::from_json(url.clone(), value));
+                    attributes.insert(key, Shape::from_json(document_name.clone(), value));
                 }
                 Self::Object {
                     attributes,
@@ -402,21 +380,18 @@ mod tests {
     fn spanned_json_locations() {
         let input = r#"{"a": 1, "b": "2"}"#;
         let value = parse(input).unwrap();
-        let shape = Shape::from_json(Url::parse("file://test").unwrap(), value);
+        let shape = Shape::from_json("file://test".to_string(), value);
         assert_eq!(
             shape.locations(),
             vec![Location {
-                uri: Url::parse("file://test").unwrap(),
-                range: Range {
-                    start: Position {
+                document: "file://test".to_string(),
+                range: Some(Range {
+                    start: LineColumn { line: 0, column: 0 },
+                    end: LineColumn {
                         line: 0,
-                        character: 0
-                    },
-                    end: Position {
-                        line: 0,
-                        character: 15
+                        column: 15
                     }
-                }
+                })
             }]
         );
         let Shape::Object { attributes, .. } = shape else {
@@ -426,33 +401,27 @@ mod tests {
         assert_eq!(
             attributes["a"].locations(),
             vec![Location {
-                uri: Url::parse("file://test").unwrap(),
-                range: Range {
-                    start: Position {
-                        line: 0,
-                        character: 6
-                    },
-                    end: Position {
-                        line: 0,
-                        character: 7
-                    }
-                }
+                document: "file://test".to_string(),
+                range: Some(Range {
+                    start: LineColumn { line: 0, column: 6 },
+                    end: LineColumn { line: 0, column: 7 }
+                })
             }]
         );
         assert_eq!(
             attributes["b"].locations(),
             vec![Location {
-                uri: Url::parse("file://test").unwrap(),
-                range: Range {
-                    start: Position {
+                document: "file://test".to_string(),
+                range: Some(Range {
+                    start: LineColumn {
                         line: 0,
-                        character: 10
+                        column: 10
                     },
-                    end: Position {
+                    end: LineColumn {
                         line: 0,
-                        character: 13
+                        column: 13
                     }
-                }
+                })
             }]
         );
     }
