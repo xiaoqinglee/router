@@ -1,0 +1,24 @@
+supergraph:
+  listen: 127.0.0.1:4000
+  path: /
+override_subgraph_url:
+  products: http://localhost:4005
+include_subgraph_errors:
+  all: true
+subscription:
+  enabled: true
+  mode:
+    passthrough:
+      all:
+        path: /ws
+      subgraphs:
+        rng:
+          path: /ws
+          protocol: graphql_transport_ws
+demand_control:
+  enabled: true
+  mode: enforce
+  strategy:
+    static_estimated:
+      list_size: 5
+      max: 50
