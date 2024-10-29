@@ -365,7 +365,7 @@ impl Validator<'_> {
                         return Err(vec![Diagnostic::new(
                             self.location(&case),
                             format!(
-                                "`->{name}` requires an array of pairs.",
+                                "`Argument to ->{name}` must be pairs of [pattern, value].",
                                 name = name.as_str()
                             ),
                             Severity::Error,
@@ -375,7 +375,7 @@ impl Validator<'_> {
                         return Err(vec![Diagnostic::new(
                             self.location(&case),
                             format!(
-                                "`->{name}` requires an array of pairs.",
+                                "`Argument to ->{name}` must be pairs of [pattern, value].",
                                 name = name.as_str()
                             ),
                             Severity::Error,
