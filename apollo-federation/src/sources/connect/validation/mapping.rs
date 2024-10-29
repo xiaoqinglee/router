@@ -232,7 +232,6 @@ impl Validator<'_> {
                 Severity::Error,
             )]);
         };
-        let args = args;
         let require_one_arg = |args: Option<MethodArgs>| {
             let Some(args) = args else {
                 return Err(vec![Diagnostic::new(
@@ -347,20 +346,10 @@ impl Validator<'_> {
                 }
             }
             ArrowMethod::Match => {
-                let arg = require_one_arg(args)?;
-                let LitExpr::Array(cases) = arg.as_ref() else {
-                    return Err(vec![Diagnostic::new(
-                        self.location(&arg),
-                        format!(
-                            "`->{name}` requires an array of pairs.",
-                            name = name.as_str()
-                        ),
-                        Severity::Error,
-                    )]);
-                };
                 let mut locations = input_shape.locations();
                 locations.push(self.location(name));
-                if cases.is_empty() {
+                let args = args.map(|args| args.args).unwrap_or_default();
+                if args.is_empty() {
                     return Err(vec![Diagnostic::for_locations(
                         locations.into_iter(),
                         format!(
@@ -371,10 +360,10 @@ impl Validator<'_> {
                     )]);
                 }
                 let mut shape = Shape::Any(locations);
-                for case in cases {
+                for case in args {
                     let LitExpr::Array(case_pair) = case.as_ref() else {
                         return Err(vec![Diagnostic::new(
-                            self.location(case),
+                            self.location(&case),
                             format!(
                                 "`->{name}` requires an array of pairs.",
                                 name = name.as_str()
@@ -384,7 +373,7 @@ impl Validator<'_> {
                     };
                     if case_pair.len() != 2 {
                         return Err(vec![Diagnostic::new(
-                            self.location(case),
+                            self.location(&case),
                             format!(
                                 "`->{name}` requires an array of pairs.",
                                 name = name.as_str()
