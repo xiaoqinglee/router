@@ -36,7 +36,10 @@ async fn test_subscription() -> Result<(), BoxError> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_subscription_and_demand_control() -> Result<(), BoxError> {
     if std::env::var("TEST_APOLLO_KEY").is_ok() && std::env::var("TEST_APOLLO_GRAPH_REF").is_ok() {
-        let mut router = create_router(include_str!("../fixtures/subscription_and_demand_control.router.yaml")).await?;
+        let mut router = create_router(include_str!(
+            "../fixtures/subscription_and_demand_control.router.yaml"
+        ))
+        .await?;
         router.start().await;
         router.assert_started().await;
 
