@@ -79,18 +79,25 @@ pub fn validate(
     variables: IndexMap<String, Shape>,
 ) -> (Option<JSONSelection>, Vec<Diagnostic>) {
     let line_col = LineColLookup::new(mapping.content);
-    let parsed = match JSONSelection::parse(mapping.content) {
-        Ok((_, parsed)) => parsed,
-        Err(err) => {
-            let diagnostic = Diagnostic::new_simple(mapping.name, None, err.to_string());
-            return (None, vec![diagnostic]);
-        }
-    };
-
     let validator = Validator {
         line_col,
         variables,
         mapping_name: mapping.name,
+    };
+
+    let parsed = match JSONSelection::parse(mapping.content) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            let diagnostic = Diagnostic {
+                severity: Severity::Error,
+                message: format!("Failed to parse mapping: {err}", err = err.message),
+                locations: vec![Location {
+                    range: Some(validator.range_for_offsets(err.offset, err.offset + 1)),
+                    document: validator.mapping_name,
+                }],
+            };
+            return (None, vec![diagnostic]);
+        }
     };
 
     let actual_output_shape = match &parsed {
@@ -116,14 +123,17 @@ struct Validator<'a> {
 }
 
 impl Validator<'_> {
+    pub(crate) fn range_for_offsets(&self, start: usize, end: usize) -> Range<LineColumn> {
+        let (line, column) = self.line_col.get(start);
+        let start = LineColumn { line, column };
+        let (line, column) = self.line_col.get(end);
+        let end = LineColumn { line, column };
+        start..end
+    }
     pub(crate) fn location<T>(&self, ranged: &impl Ranged<T>) -> Location {
-        let range = ranged.range().map(|range| {
-            let (line, column) = self.line_col.get(range.start);
-            let start = LineColumn { line, column };
-            let (line, column) = self.line_col.get(range.end);
-            let end = LineColumn { line, column };
-            start..end
-        });
+        let range = ranged
+            .range()
+            .map(|range| self.range_for_offsets(range.start, range.end));
 
         Location {
             document: self.mapping_name.clone(),

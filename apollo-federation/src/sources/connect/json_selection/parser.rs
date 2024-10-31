@@ -139,19 +139,28 @@ impl JSONSelection {
     // if we drastically change implementation details. That's why we use &str
     // as the input type and a custom JSONSelectionParseError type as the error
     // type, rather than using Span or nom::error::Error directly.
-    pub fn parse(input: &str) -> IResult<&str, Self, JSONSelectionParseError> {
+    pub fn parse(input: &str) -> Result<Self, JSONSelectionParseError> {
         match JSONSelection::parse_span(new_span(input)) {
             Ok((remainder, selection)) => {
                 // To avoid exposing the implementation details of nom_locate's
                 // LocatedSpan, we report the remainder as a &str instead.
-                Ok((remainder.fragment(), selection))
+                let fragment = remainder.fragment();
+                if fragment.is_empty() {
+                    Ok(selection)
+                } else {
+                    Err(JSONSelectionParseError {
+                        message: "Unexpected trailing characters".to_string(),
+                        fragment: fragment.to_string(),
+                        offset: remainder.location_offset(),
+                    })
+                }
             }
 
             Err(e) => match e {
                 nom::Err::Error(e) | nom::Err::Failure(e) => {
                     // If a non-fatal nom::Err::Error bubbles all the way up
                     // here, then it becomes a fatal nom::Err::Failure.
-                    Err(nom::Err::Failure(JSONSelectionParseError {
+                    Err(JSONSelectionParseError {
                         message: if let Some(message_str) = e.input.extra {
                             message_str.to_string()
                         } else {
@@ -162,7 +171,7 @@ impl JSONSelection {
                         },
                         fragment: e.input.fragment().to_string(),
                         offset: e.input.location_offset(),
-                    }))
+                    })
                 }
 
                 nom::Err::Incomplete(_) => unreachable!("nom::Err::Incomplete not expected here"),

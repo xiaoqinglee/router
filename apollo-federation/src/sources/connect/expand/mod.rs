@@ -504,7 +504,7 @@ mod helpers {
                                             to_schema,
                                             &self.directive_deny_list,
                                         );
-                                        let (_, parsed) =
+                                        let parsed =
                                             JSONSelection::parse(&selection).map_err(|e| {
                                                 FederationError::internal(format!("could not parse fake selection for sibling field: {e}"))
                                             })?;

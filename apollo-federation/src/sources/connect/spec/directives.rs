@@ -287,13 +287,8 @@ impl ConnectDirectiveArguments {
                 let selection_value = arg.value.as_str().ok_or(internal!(
                     "`selection` field in `@connect` directive is not a string"
                 ))?;
-                let (remainder, selection_value) = JSONSelection::parse(selection_value)
-                    .map_err(|_| internal!("invalid JSON selection"))?;
-                if !remainder.is_empty() {
-                    return Err(internal!(format!(
-                        "`selection` field in `@connect` directive could not be fully parsed: the following was left over: {remainder}"
-                    )));
-                }
+                let selection_value = JSONSelection::parse(selection_value)
+                    .map_err(|err| internal!(format!("invalid selection: {err}")))?;
 
                 selection = Some(selection_value);
             } else if arg_name == CONNECT_ENTITY_ARGUMENT_NAME.as_str() {
@@ -337,13 +332,8 @@ impl TryFrom<&ObjectNode> for ConnectHTTPArguments {
                 let body_value = value.as_str().ok_or(internal!(
                     "`body` field in `@connect` directive's `http` field is not a string"
                 ))?;
-                let (remainder, body_value) = JSONSelection::parse(body_value)
-                    .map_err(|_| internal!("invalid JSON selection"))?;
-                if !remainder.is_empty() {
-                    return Err(internal!(format!(
-                        "`body` field in `@connect` directive could not be fully parsed: the following was left over: {remainder}"
-                    )));
-                }
+                let body_value = JSONSelection::parse(body_value)
+                    .map_err(|err| internal!(format!("invalid JSON selection: {err}")))?;
 
                 body = Some(body_value);
             } else if name == HEADERS_ARGUMENT_NAME.as_str() {
