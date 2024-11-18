@@ -35,20 +35,6 @@ impl SpecDefinition for LinkSpecDefinition {
 }
 
 lazy_static! {
-    pub(crate) static ref CORE_VERSIONS: SpecDefinitions<LinkSpecDefinition> = {
-        let mut definitions = SpecDefinitions::new(Identity::core_identity());
-        definitions.add(LinkSpecDefinition::new(
-            Version { major: 0, minor: 1 },
-            None,
-            Identity::core_identity(),
-        ));
-        definitions.add(LinkSpecDefinition::new(
-            Version { major: 0, minor: 2 },
-            Some(Version { major: 2, minor: 0 }),
-            Identity::core_identity(),
-        ));
-        definitions
-    };
     pub(crate) static ref LINK_VERSIONS: SpecDefinitions<LinkSpecDefinition> = {
         let mut definitions = SpecDefinitions::new(Identity::link_identity());
         definitions.add(LinkSpecDefinition::new(

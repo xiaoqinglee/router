@@ -780,7 +780,7 @@ impl SchemaDefinitionPosition {
                 let link_name_in_schema = link_spec_definition
                     .directive_name_in_schema(schema, &link_spec_definition.identity().name)?
                     .ok_or_else(|| SingleFederationError::Internal {
-                        message: "Unexpectedly could not find core/link spec usage".to_owned(),
+                        message: "Unexpectedly could not find link spec usage".to_owned(),
                     })?;
                 link_name_in_schema == name
             }
@@ -5289,7 +5289,7 @@ impl FederationSchema {
     ///
     /// 1. All schema element references must point to an existing schema element of the appropriate
     ///    kind (e.g. object type fields must return an existing output type).
-    /// 2. If the schema uses the core/link spec, then usages of the @core/@link directive must be
+    /// 2. If the schema uses the link spec, then usages of the @link directive must be
     ///    valid.
     ///
     /// The input schema may be otherwise invalid GraphQL (e.g. it may not contain a Query type). If

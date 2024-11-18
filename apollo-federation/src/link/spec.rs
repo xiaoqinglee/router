@@ -54,13 +54,6 @@ impl fmt::Display for Identity {
 }
 
 impl Identity {
-    pub fn core_identity() -> Identity {
-        Identity {
-            domain: APOLLO_SPEC_DOMAIN.to_string(),
-            name: name!("core"),
-        }
-    }
-
     pub fn link_identity() -> Identity {
         Identity {
             domain: APOLLO_SPEC_DOMAIN.to_string(),

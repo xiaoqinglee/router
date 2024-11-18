@@ -16,7 +16,6 @@ use thiserror::Error;
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
 use crate::link::link_spec_definition::LinkSpecDefinition;
-use crate::link::link_spec_definition::CORE_VERSIONS;
 use crate::link::link_spec_definition::LINK_VERSIONS;
 use crate::link::spec::Identity;
 use crate::link::spec::Url;
@@ -275,31 +274,19 @@ impl Link {
     }
 
     pub fn from_directive_application(directive: &Node<Directive>) -> Result<Link, LinkError> {
-        let (url, is_link) = if let Some(value) = directive.specified_argument_by_name("url") {
-            (value, true)
-        } else if let Some(value) = directive.specified_argument_by_name("feature") {
-            // XXX(@goto-bus-stop): @core compatibility is primarily to support old tests--should be
-            // removed when those are updated.
-            (value, false)
+        let url = if let Some(value) = directive.specified_argument_by_name("url") {
+            value
         } else {
             return Err(LinkError::BootstrapError(
                 "the `url` argument for @link is mandatory".to_string(),
             ));
         };
 
-        let (directive_name, arg_name) = if is_link {
-            ("link", "url")
-        } else {
-            ("core", "feature")
-        };
-
         let url = url.as_str().ok_or_else(|| {
-            LinkError::BootstrapError(format!(
-                "the `{arg_name}` argument for @{directive_name} must be a String"
-            ))
+            LinkError::BootstrapError(format!("the `url` argument for @link must be a String"))
         })?;
         let url: Url = url.parse::<Url>().map_err(|e| {
-            LinkError::BootstrapError(format!("invalid `{arg_name}` argument (reason: {e})"))
+            LinkError::BootstrapError(format!("invalid `url` argument (reason: {e})"))
         })?;
 
         let spec_alias = directive
@@ -313,17 +300,13 @@ impl Link {
             None
         };
 
-        let imports = if is_link {
-            directive
-                .specified_argument_by_name("import")
-                .and_then(|arg| arg.as_list())
-                .unwrap_or(&[])
-                .iter()
-                .map(|value| Ok(Arc::new(Import::from_value(value)?)))
-                .collect::<Result<Vec<Arc<Import>>, LinkError>>()?
-        } else {
-            Default::default()
-        };
+        let imports = directive
+            .specified_argument_by_name("import")
+            .and_then(|arg| arg.as_list())
+            .unwrap_or(&[])
+            .iter()
+            .map(|value| Ok(Arc::new(Import::from_value(value)?)))
+            .collect::<Result<Vec<Arc<Import>>, LinkError>>()?;
 
         Ok(Link {
             url,
@@ -404,16 +387,9 @@ impl LinksMetadata {
                 }
                 .into()
             })
-        } else if let Some(core_link) = self.for_identity(&Identity::core_identity()) {
-            CORE_VERSIONS.find(&core_link.url.version).ok_or_else(|| {
-                SingleFederationError::Internal {
-                    message: format!("Unexpected core spec version {}", core_link.url.version),
-                }
-                .into()
-            })
         } else {
             Err(SingleFederationError::Internal {
-                message: "Unexpectedly could not find core/link spec".to_owned(),
+                message: "Unexpectedly could not find link spec".to_owned(),
             }
             .into())
         }
