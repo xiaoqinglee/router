@@ -1488,6 +1488,7 @@ mod tests {
             "include_subgraph_errors": {
                 "all": true
             },
+            "experimental_query_planner_mode": "new",
             "authorization": {
                 "directives": {
                     "enabled": true
@@ -1569,6 +1570,7 @@ mod tests {
             "include_subgraph_errors": {
                 "all": true
             },
+            "experimental_query_planner_mode": "new",
             "authorization": {
                 "directives": {
                     "enabled": true
@@ -1644,6 +1646,7 @@ mod tests {
             "include_subgraph_errors": {
                 "all": true
             },
+            "experimental_query_planner_mode": "new",
             "authorization": {
                 "directives": {
                     "enabled": true
@@ -1917,6 +1920,7 @@ mod tests {
             "include_subgraph_errors": {
                 "all": true
             },
+            "experimental_query_planner_mode": "new",
             "authorization": {
                 "directives": {
                     "enabled": true
@@ -1975,6 +1979,7 @@ mod tests {
             "include_subgraph_errors": {
                 "all": true
             },
+            "experimental_query_planner_mode": "new",
             "authorization": {
                 "directives": {
                     "enabled": true
