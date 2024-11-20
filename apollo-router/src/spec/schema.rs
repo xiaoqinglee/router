@@ -533,25 +533,6 @@ mod tests {
     }
 
     #[test]
-    fn federation_version() {
-        // @core directive
-        let schema = Schema::parse(
-            include_str!("../testdata/minimal_fed1_supergraph.graphql"),
-            &Default::default(),
-        )
-        .unwrap();
-        assert_eq!(schema.federation_version(), Some(1));
-
-        // @link directive
-        let schema = Schema::parse(
-            include_str!("../testdata/minimal_supergraph.graphql"),
-            &Default::default(),
-        )
-        .unwrap();
-        assert_eq!(schema.federation_version(), Some(2));
-    }
-
-    #[test]
     fn schema_id() {
         #[cfg(not(windows))]
         {

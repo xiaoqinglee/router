@@ -51,14 +51,6 @@ struct FormatTest {
     expected: Option<serde_json_bytes::Value>,
     expected_errors: Option<serde_json_bytes::Value>,
     expected_extensions: Option<serde_json_bytes::Value>,
-    federation_version: FederationVersion,
-}
-
-#[derive(Default)]
-enum FederationVersion {
-    #[default]
-    Fed1,
-    Fed2,
 }
 
 impl FormatTest {
@@ -111,11 +103,6 @@ impl FormatTest {
         self
     }
 
-    fn fed2(mut self) -> Self {
-        self.federation_version = FederationVersion::Fed2;
-        self
-    }
-
     #[track_caller]
     fn test(self) {
         let schema = self.schema.expect("missing schema");
@@ -123,10 +110,7 @@ impl FormatTest {
         let response = self.response.expect("missing response");
         let query_type_name = self.query_type_name.unwrap_or("Query");
 
-        let schema = match self.federation_version {
-            FederationVersion::Fed1 => with_supergraph_boilerplate_fed1(schema, query_type_name),
-            FederationVersion::Fed2 => with_supergraph_boilerplate(schema, query_type_name),
-        };
+        let schema = with_supergraph_boilerplate(schema, query_type_name);
 
         let schema = Schema::parse(&schema, &Default::default()).expect("could not parse schema");
 
@@ -164,28 +148,6 @@ impl FormatTest {
             );
         }
     }
-}
-
-fn with_supergraph_boilerplate_fed1(content: &str, query_type_name: &str) -> String {
-    format!(
-        r#"
-    schema
-        @core(feature: "https://specs.apollo.dev/core/v0.1")
-        @core(feature: "https://specs.apollo.dev/join/v0.1")
-        @core(feature: "https://specs.apollo.dev/inaccessible/v0.1")
-         {{
-        query: {query_type_name}
-    }}
-    directive @core(feature: String!) repeatable on SCHEMA
-    directive @join__graph(name: String!, url: String!) on ENUM_VALUE
-    directive @inaccessible on OBJECT| FIELD_DEFINITION | INTERFACE | UNION
-    enum join__Graph {{
-        TEST @join__graph(name: "test", url: "http://localhost:4001/graphql")
-    }}
-
-    {content}
-    "#
-    )
 }
 
 fn with_supergraph_boilerplate(content: &str, query_type_name: &str) -> String {
@@ -5428,7 +5390,6 @@ fn inaccessible_on_interface() {
 
     FormatTest::builder()
         .schema(schema)
-        .fed2()
         .query(
             "query  {
                 test_interface {
@@ -5605,7 +5566,6 @@ fn fragment_on_interface() {
 
     FormatTest::builder()
         .schema(schema)
-        .fed2()
         .query(
             "query  {
             test_interface {
@@ -5637,7 +5597,6 @@ fn fragment_on_interface() {
 
     FormatTest::builder()
         .schema(schema)
-        .fed2()
         .query(
             "query  {
             test_interface {
@@ -5666,7 +5625,6 @@ fn fragment_on_interface() {
 
     FormatTest::builder()
         .schema(schema)
-        .fed2()
         .query(
             "query  {
             test_interface {
@@ -5699,7 +5657,6 @@ fn fragment_on_interface() {
 
     FormatTest::builder()
         .schema(schema)
-        .fed2()
         .query(
             "query  {
             test_interface {
@@ -5752,7 +5709,6 @@ fn fragment_on_union() {
 
     FormatTest::builder()
         .schema(schema)
-        .fed2()
         .query(
             "{
             settings {
@@ -5821,7 +5777,6 @@ fn fragment_on_interface_without_typename() {
 
     FormatTest::builder()
         .schema(schema)
-        .fed2()
         .query(
             r#"query {
                 mtb: inStore(key: "mountainbikes") {
@@ -5860,7 +5815,6 @@ fn fragment_on_interface_without_typename() {
     // With inline fragment
     FormatTest::builder()
         .schema(schema)
-        .fed2()
         .query(
             r#"query {
             mtb: inStore(key: "mountainbikes") {
