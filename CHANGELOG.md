@@ -6,6 +6,9 @@ This project adheres to [Semantic Versioning v2.0.0](https://semver.org/spec/v2.
 
 # [1.58.0] - 2024-11-26
 
+> [!IMPORTANT]
+> If you have enabled [Distributed query plan caching](https://www.apollographql.com/docs/router/configuration/distributed-caching/#distributed-query-plan-caching), this release contains changes which necessarily alter the hashing algorithm used for the cache keys.  On account of this, you should anticipate additional cache regeneration cost when updating between these versions while the new hashing algorithm comes into service.
+
 ## 🚀 Features
 
 ### Support DNS resolution strategy configuration ([PR #6109](https://github.com/apollographql/router/pull/6109))
@@ -71,7 +74,7 @@ The router now compresses operations sent to subgraphs by default by generating 
 definitions and using them in the operation.
 
 This change enables `generate_query_fragments` by default while disabling `experimental_reuse_query_fragments`. When enabled, `experimental_reuse_query_fragments` attempts to intelligently reuse the fragment definitions
-from the original operation. However, fragment generation with `generate_query_fragments` is much faster also produces better outputs in most cases.
+from the original operation. However, fragment generation with `generate_query_fragments` is much faster and produces better outputs in most cases.
 
 If you are relying on the shape of fragments in your subgraph operations or tests, you can opt out of the new algorithm with the configuration below. 
 
@@ -127,8 +130,12 @@ By [@IvanGoncharov](https://github.com/IvanGoncharov) in https://github.com/apol
 
 ### Add `@context` support in the native query planner ([PR #6310](https://github.com/apollographql/router/pull/6310))
 
-The [`@context`](https://www.apollographql.com/docs/graphos/reference/federation/directives#context) feature is now available in the native query planner.
-This brings the native query planner to feature parity with the legacy query planner for all Federation v2 graphs.
+The [`@context`](https://www.apollographql.com/docs/graphos/reference/federation/directives#context) feature is now available in the [native query planner](https://www.apollographql.com/docs/graphos/routing/query-planning/native-query-planner).
+This brings the native query planner to feature parity with the legacy query planner for all Federation v2 graphs. The native query planner can be enabled with the following configuration:
+```yaml, filename=router.yaml
+experimental_query_planner_mode: new
+```
+
 
 By [@clenfest](https://github.com/clenfest), [@TylerBloom](https://github.com/TylerBloom) in https://github.com/apollographql/router/pull/6310
 
@@ -175,15 +182,14 @@ By [@garypen](https://github.com/garypen) in https://github.com/apollographql/ro
 
 The router now avoids blocking threads when executing asynchronous code by using a thread pool with a priority queue.
 
-This improves the performance of the following components can take non-trivial amounts of CPU time:
+This improves the performance of the following components that can take non-trivial amounts of CPU time:
 
 * GraphQL parsing
 * GraphQL validation
 * Query planning
 * Schema introspection
 
-In order to avoid blocking threads that execute asynchronous code,
-they are now run in a new thread pool with a priority queue. The size of the thread pool is based on the number of available CPU cores.
+The size of the thread pool is based on the number of available CPU cores.
 
 The thread pool replaces the router's prior implementation that used Tokio’s [`spawn_blocking`](https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html).
 
@@ -266,9 +272,6 @@ By [@tninesling](https://github.com/tninesling) in https://github.com/apollograp
 ## 🛠 Maintenance
 
 ### Query planner cache key improvements ([Issue #5160](https://github.com/apollographql/router/issues/5160))
-
-> [!IMPORTANT]
-> If you have enabled [Distributed query plan caching](https://www.apollographql.com/docs/router/configuration/distributed-caching/#distributed-query-plan-caching), this release changes the hashing algorithm used for the cache keys.  On account of this, you should anticipate additional cache regeneration cost when updating between these versions while the new hashing algorithm comes into service.
 
 Several performance improvements have been implemented for query plan cache key generation. In particular, the distributed cache's key format has changed, which adds prefixes to the different key segments to help in debugging.
 
