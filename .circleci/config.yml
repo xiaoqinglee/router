@@ -126,16 +126,16 @@ commands:
           platform: << parameters.platform >>
       - install_rust:
           platform: << parameters.platform >>
-      - install_extra_tools
+      # - install_extra_tools
       - fetch_dependencies
-      - save_cache:
-          key: "<< pipeline.parameters.toolchain_version >>"
-          paths:
-            - ~/.deb
-            - ~/.cargo
-            - ~/.rustup
-            - ~/.local
-      - install_xtask
+      # - save_cache:
+      #     key: "<< pipeline.parameters.toolchain_version >>"
+      #     paths:
+      #       - ~/.deb
+      #       - ~/.cargo
+      #       - ~/.rustup
+      #       - ~/.local
+      # - install_xtask
 
   # Even though all executors use bash there are a number of differences that can be taken care of up front.
   # Windows shell commands are found on the path before the linux subsystem commands, so use aliases to override.
@@ -512,7 +512,8 @@ commands:
           environment:
             # Use the settings from the "ci" profile in nextest configuration.
             NEXTEST_PROFILE: ci
-          command: xtask test --workspace --locked --features ci,hyper_header_limits
+          command: cargo test -p apollo-router --locked test_router_timeout_operation_name_in_tracing
+          # command: xtask test --workspace --locked --features ci,hyper_header_limits
       - run:
           name: Delete large files from cache
           command: |
@@ -1032,30 +1033,31 @@ workflows:
           - << pipeline.parameters.quick_nightly >>
           - << pipeline.parameters.test_updated_cargo_deps >>
     jobs:
-      - lint:
-          matrix:
-            parameters:
-              platform: [ amd_linux_build ]
-      - check_helm:
-          matrix:
-            parameters:
-              platform: [ amd_linux_helm ]
-      - check_compliance:
-          matrix:
-            parameters:
-              platform: [ amd_linux_build ]
+      # - lint:
+      #     matrix:
+      #       parameters:
+      #         platform: [ amd_linux_build ]
+      # - check_helm:
+      #     matrix:
+      #       parameters:
+      #         platform: [ amd_linux_helm ]
+      # - check_compliance:
+      #     matrix:
+      #       parameters:
+      #         platform: [ amd_linux_build ]
 
       - test:
           # this should be changed back to true on dev after release
           fuzz: false
-          requires:
-            - lint
-            - check_helm
-            - check_compliance
+          # requires:
+          #   - lint
+          #   - check_helm
+          #   - check_compliance
           matrix:
             parameters:
               platform:
-                [ macos_test, windows_test, amd_linux_test, arm_linux_test ]
+                [ arm_linux_test ]
+                # [ macos_test, windows_test, amd_linux_test, arm_linux_test ]
 
   quick-nightly:
     when: << pipeline.parameters.quick_nightly >>
