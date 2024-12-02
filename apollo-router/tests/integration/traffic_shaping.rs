@@ -86,6 +86,7 @@ async fn test_router_timeout_operation_name_in_tracing() -> Result<(), BoxError>
     let mut router = IntegrationTest::builder()
         .config(
             r#"
+            experimental_query_planner_mode: new
             traffic_shaping:
                 router:
                     timeout: 1ns
