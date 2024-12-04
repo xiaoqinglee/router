@@ -114,7 +114,7 @@ impl Default for QueryPlannerConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, Hash, Serialize)]
+#[derive(Debug, Clone, Hash, Serialize)]
 pub struct QueryPlanIncrementalDeliveryConfig {
     /// Enables `@defer` support in the query planner, breaking up the query plan with [DeferNode]s
     /// as appropriate.
@@ -122,11 +122,18 @@ pub struct QueryPlanIncrementalDeliveryConfig {
     /// If false, operations with `@defer` are still accepted, but are planned as if they did not
     /// contain `@defer` directives.
     ///
-    /// Defaults to false.
+    /// Defaults to true.
     ///
     /// [DeferNode]: crate::query_plan::DeferNode
-    #[serde(default)]
     pub enable_defer: bool,
+}
+
+impl Default for QueryPlanIncrementalDeliveryConfig {
+    fn default() -> Self {
+        Self {
+            enable_defer: true
+        }
+    }
 }
 
 #[derive(Debug, Clone, Hash, Serialize)]
@@ -418,10 +425,11 @@ impl QueryPlanner {
                     has_defers,
                 )
             } else {
-                // If defer is not enabled, we remove all @defer from the query. This feels cleaner do this once here than
-                // having to guard all the code dealing with defer later, and is probably less error prone too (less likely
-                // to end up passing through a @defer to a subgraph by mistake).
-                (normalized_operation.without_defer()?, None, None, false)
+                // there is nothing to normalize
+                //
+                // if `@defer` support is explicitly disabled, query planner will never receive
+                // deferred operation as router will reject it with GraphQL validation error
+                (normalized_operation, None, None, false)
             };
 
         if normalized_operation.selection_set.is_empty() {

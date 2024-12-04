@@ -18,8 +18,6 @@ use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
 use crate::subgraph::Subgraph;
 
-mod defer;
-
 pub(super) fn parse_schema_and_operation(
     schema_and_operation: &str,
 ) -> (ValidFederationSchema, ExecutableDocument) {
