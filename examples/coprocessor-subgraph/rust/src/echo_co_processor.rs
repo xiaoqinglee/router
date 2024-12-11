@@ -44,8 +44,7 @@ impl Plugin for EchoCoProcessor {
     // In real life, the coprocessor will be on an other web server
     // written in a language you're comfortable with.
     fn web_endpoints(&self) -> MultiMap<ListenAddr, Endpoint> {
-        let web_endpoint =
-            Endpoint::from_router_service("/".to_string(), SimpleEndpoint {}.boxed());
+        let web_endpoint = Endpoint::new("/".to_string(), SimpleEndpoint {}.boxed());
 
         let mut endpoints = MultiMap::new();
         let socket_addr: SocketAddr = format!("127.0.0.1:{}", self.configuration.port)

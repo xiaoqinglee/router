@@ -509,7 +509,7 @@ mod tests {
         let mut web_endpoints = MultiMap::new();
         web_endpoints.insert(
             SocketAddr::from_str("0.0.0.0:4010").unwrap().into(),
-            Endpoint::from_router_service("/".to_string(), endpoint),
+            Endpoint::new("/".to_string(), endpoint),
         );
 
         let error = init_with_config(
@@ -548,7 +548,7 @@ mod tests {
         let mut mm = MultiMap::new();
         mm.insert(
             SocketAddr::from_str("127.0.0.1:4010").unwrap().into(),
-            Endpoint::from_router_service("/".to_string(), endpoint),
+            Endpoint::new("/".to_string(), endpoint),
         );
 
         let error = init_with_config(router::service::empty().await, Arc::new(configuration), mm)

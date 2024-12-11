@@ -432,7 +432,7 @@ impl Plugin for EntityCache {
         {
             match &self.endpoint_config {
                 Some(endpoint_config) => {
-                    let endpoint = Endpoint::from_router_service(
+                    let endpoint = Endpoint::new(
                         endpoint_config.path.clone(),
                         InvalidationService::new(self.subgraphs.clone(), self.invalidation.clone())
                             .boxed(),

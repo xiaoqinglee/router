@@ -1282,11 +1282,11 @@ async fn it_answers_to_custom_endpoint() -> Result<(), ApolloRouterError> {
     let mut web_endpoints = MultiMap::new();
     web_endpoints.insert(
         ListenAddr::SocketAddr("127.0.0.1:0".parse().unwrap()),
-        Endpoint::from_router_service("/a-custom-path".to_string(), endpoint.clone().boxed()),
+        Endpoint::new("/a-custom-path".to_string(), endpoint.clone().boxed()),
     );
     web_endpoints.insert(
         ListenAddr::SocketAddr("127.0.0.1:0".parse().unwrap()),
-        Endpoint::from_router_service("/an-other-custom-path".to_string(), endpoint.boxed()),
+        Endpoint::new("/an-other-custom-path".to_string(), endpoint.boxed()),
     );
 
     let conf = Configuration::fake_builder().build().unwrap();
@@ -1390,11 +1390,11 @@ async fn it_refuses_to_bind_two_extra_endpoints_on_the_same_path() {
     let mut web_endpoints = MultiMap::new();
     web_endpoints.insert(
         ListenAddr::SocketAddr("127.0.0.1:0".parse().unwrap()),
-        Endpoint::from_router_service("/a-custom-path".to_string(), endpoint.clone().boxed()),
+        Endpoint::new("/a-custom-path".to_string(), endpoint.clone().boxed()),
     );
     web_endpoints.insert(
         ListenAddr::SocketAddr("127.0.0.1:0".parse().unwrap()),
-        Endpoint::from_router_service("/a-custom-path".to_string(), endpoint.boxed()),
+        Endpoint::new("/a-custom-path".to_string(), endpoint.boxed()),
     );
 
     let conf = Configuration::fake_builder().build().unwrap();

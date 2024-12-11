@@ -140,7 +140,7 @@ where
         );
         endpoints.insert(
             configuration.health_check.listen.clone(),
-            Endpoint::from_router_service(
+            Endpoint::new(
                 configuration.health_check.path.clone(),
                 service_fn(move |req: router::Request| {
                     let mut status_code = StatusCode::OK;

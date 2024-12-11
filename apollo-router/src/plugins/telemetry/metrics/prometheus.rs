@@ -105,7 +105,7 @@ impl MetricsConfigurator for Config {
                 tracing::debug!("prometheus registry can be reused");
                 builder.custom_endpoints.insert(
                     self.listen.clone(),
-                    Endpoint::from_router_service(
+                    Endpoint::new(
                         self.path.clone(),
                         PrometheusService {
                             registry: last_registry.clone(),
@@ -146,7 +146,7 @@ impl MetricsConfigurator for Config {
         let meter_provider = meter_provider_builder.build();
         builder.custom_endpoints.insert(
             self.listen.clone(),
-            Endpoint::from_router_service(
+            Endpoint::new(
                 self.path.clone(),
                 PrometheusService {
                     registry: registry.clone(),
